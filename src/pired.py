@@ -6,9 +6,11 @@ from collections import deque
 
 from random import randrange
 
-# from sense_hat import SenseHat
-# sense = SenseHat()
-# sense.clear()
+from sense_hat import SenseHat
+sense = SenseHat()
+sense.clear()
+# sense.set_rotation(90)
+# sense.set_rotation(270)
 
 # -- CONSTANTS --
 #           - 0    1    2    3    4    5    6    7 -
@@ -26,11 +28,12 @@ _MIN_HUMID_ = 0.0       # Min/max SenseHat humidity in %
 _MAX_HUMID_ = 100.0
 
 _MAX_PIXEL_ = 8         # SenseHat has 8x8 LED display
+_MAX_DATA_ = 8
 
 # -- GLOBALS --
-tempsQ = deque(_EMPTY_Q_, maxlen=8)     # Temperature queue
-pressQ = deque(_EMPTY_Q_, maxlen=8)     # Pressure queue
-humidQ = deque(_EMPTY_Q_, maxlen=8)     # Humidity queue
+tempsQ = deque(_EMPTY_Q_, maxlen=_MAX_DATA_)     # Temperature queue
+pressQ = deque(_EMPTY_Q_, maxlen=_MAX_DATA_)     # Pressure queue
+humidQ = deque(_EMPTY_Q_, maxlen=_MAX_DATA_)     # Humidity queue
 
 # Map value to range
 # 
@@ -77,13 +80,17 @@ def convert_to_rgb(minval, maxval, val, colors):
 # Update all pixels on SenseHat with new color values
 def update_LED(data, inMin, inMax):
     pixels = []
-    for i in range(_MAX_PIXEL_):
+    tstData = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+    for i in range(_MAX_DATA_):
+        val = round(num_to_range(data[i], inMin, inMax, 0, _MAX_PIXEL_))
+        # val = tstData[i]
+        # val = 3.0
+        
         for j in range(_MAX_PIXEL_):
-            val = round(num_to_range(data[i], inMin, inMax, 0, _MAX_PIXEL_ - 1))
-            pixels.append(_RGB_BLACK_ if j < val else convert_to_rgb(inMin, inMax, val, _COLORS_))
+            pixels.append(_RGB_BLACK_ if j < (_MAX_PIXEL_ - val) else convert_to_rgb(inMin, inMax, data[i], _COLORS_))
 
-    # sense.set_pixels(pixels)
-    print(f"{pixels}")
+    sense.set_pixels(pixels)
+    # print(f"{pixels}")
 
 
 # Read sensor data
@@ -111,7 +118,7 @@ if __name__ == '__main__':
             humidQ.append(humid)
 
             update_LED(tempsQ, _MIN_TEMP_, _MAX_TEMP_)
-            print(f"\nTemps:    {tempsQ} \n\n") 
+            # print(f"\nTemps:    {tempsQ} \n\n") 
             # print(f"Humidity: {humidQ}")  
             # print(f"Pressure: {pressQ}")
 
@@ -120,4 +127,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         pass
 
-    # sense.clear()
+    sense.clear()
+    
