@@ -33,6 +33,9 @@ _OLD_/
 *.ini
 *.log
 
+# Common settings file across f451 Labs projects
+settings.toml
+
 # -------------------------------------
 # Misc Stuff
 # -------------------------------------

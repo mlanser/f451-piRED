@@ -1,13 +1,13 @@
-[adafruit_io]
-io_username = <ADAFRUIT IO USERNAMR>
-io_key = <ADAFRUIT IO KEY>
+# -- Adafruit IO --
+AIO_USERNAME = "<ADAFRUIT IO USERNAMR>"
+AIO_KEY = "<ADAFRUIT IO KEY>"
 
-[io_feeds]
-temperature = <ADAFRUIT IO FEED KEY FOR TEMPERATURE DATA>
-pressure = <ADAFRUIT IO FEED KEY FOR PRESSURE DATA>
-humidity = <ADAFRUIT IO FEED KEY FOR HUMIDITY DATA>
+# -- Adafruit IO Feeds --
+FEED_TEMPS = "<ADAFRUIT IO FEED KEY FOR TEMPERATURE DATA>"
+FEED_PRESS = "<ADAFRUIT IO FEED KEY FOR PRESSURE DATA>"
+FEED_HUMID = "<ADAFRUIT IO FEED KEY FOR HUMIDITY DATA>"
 
-[defaults]
-rotation = <DEFAULT ROTATION [0, 90, 180, 270]>
-display = <DEFAULT DISPLAY [1, 2, 3, 4]>
-delay = <DELAY IN SECONDS BETWEEN UPLOADS - SMALLER NUMBER = MORE FREQ UPLOADS = HIGHER DATA RATE>
+# -- Misc. Application Defaults --
+ROTATION = 0    # Default rotation for Sense Hat 8x8 LED - [0, 90, 180, 270]
+DISPLAY = 4     # Default display [1, 2, 3, 4]
+DELAY = 58      # Dealy in seconds between uploads to Adafruit IO. Smaller number -> more freq uploads -> higher data rate
