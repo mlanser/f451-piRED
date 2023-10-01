@@ -10,4 +10,8 @@ FEED_HUMID = "<ADAFRUIT IO FEED KEY FOR HUMIDITY DATA>"
 # -- Misc. Application Defaults --
 ROTATION = 0    # Default rotation for Sense Hat 8x8 LED - [0, 90, 180, 270]
 DISPLAY = 4     # Default display [1, 2, 3, 4]
-DELAY = 58      # Dealy in seconds between uploads to Adafruit IO. Smaller number -> more freq uploads -> higher data rate
+DELAY = 59      # Delay in seconds between uploads to Adafruit IO. Smaller number -> more freq uploads -> higher data rate
+WAIT = 1        # Delay in seconds between sensor reads
+
+LOGLVL = "INFO" # Logging level (See: https://docs.python.org/3/library/logging.html#logging-levels)
+LOGFILE = "<FILE NAME>"

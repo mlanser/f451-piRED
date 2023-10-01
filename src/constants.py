@@ -36,6 +36,10 @@ MAX_HUMID = 100.0
 LED_MAX_COL = 8         # sense has an 8x8 LED display
 LED_MAX_ROW = 8
 
+DEF_DELAY = 59          # Default delay between uploads
+DEF_WAIT = 1            # Default delay between sensor reads
+DEF_ROTATION = 0
+
 
 # =========================================================
 #    K E Y W O R D S   F O R   C O N F I G   F I L E S
@@ -48,24 +52,17 @@ SENSOR_WIND: str = "f451_wind"
 SENSOR_RAIN: str = "f451_rain"
 SENSOR_SPEED: str = "f451_speed"
 
-KWD_ACCT_SID: str = "acct_sid"
-KWD_APP_TOKEN: str = "app_token"
-KWD_ATTACHMENTS: str = "attachments"  # Attachments for email and Slack
-KWD_AUTH_SECRET: str = "auth_secret"
-KWD_AUTH_TOKEN: str = "auth_token"
-KWD_SENSORS: str = "sensors"
-KWD_SENSOR_MAP: str = "sensor_map"
-KWD_DEBUG: str = "debug"  # Reserved
-KWD_LOG_LEVEL: str = "log_level"
-KWD_PRIV_KEY: str = "priv_api_key"
-KWD_PUBL_KEY: str = "publ_val_key"
-KWD_SIGN_SECRET: str = "signing_secret"
-KWD_SUPPRESS_ERROR: str = "suppress_errors"
-KWD_TAGS: str = "tags"
-KWD_TESTMODE: str = "testmode"
-KWD_USER_KEY: str = "user_key"
-KWD_USER_SECRET: str = "user_secret"
-KWD_WEB_HOOK_KEY: str = "webhook_sign_key"
+KWD_AIO_USER: str = "AIO_USERNAME"
+KWD_AIO_KEY: str = "AIO_KEY"
+KWD_DELAY: str = "DELAY"
+KWD_WAIT: str = "WAIT"
+KWD_ROTATION: str = "ROTATION"
+KWD_DISPLAY: str = "DISPLAY"
+KWD_LOG_LEVEL: str = "LOGLVL"
+KWD_LOG_FILE: str = "LOGFILE"
+KWD_FEED_TEMPS: str = "FEED_TEMPS"
+KWD_FEED_PRESS: str = "FEED_PRESS"
+KWD_FEED_HUMID: str = "FEED_HUMID"
 
 LOG_CRITICAL: str = "CRITICAL"
 LOG_DEBUG: str = "DEBUG"
@@ -78,14 +75,6 @@ LOG_WARNING: str = "WARNING"
 LOG_LVL_OFF: int = -1
 LOG_LVL_MIN: int = -1
 LOG_LVL_MAX: int = 100
-
-ATTR_REQUIRED: bool = True
-ATTR_OPTIONAL: bool = False
-
-SNSR_TYPE_MAIN: str = "main"
-SNSR_TYPE_TEMP: str = "temp"
-SNSR_TYPE_HUMID: str = "humid"
-SNSR_TYPE_SPEED: str = "speed"
 
 STATUS_SUCCESS: str = "success"
 STATUS_FAILURE: str = "failure"
