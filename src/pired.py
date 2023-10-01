@@ -264,16 +264,9 @@ def send_sensor_data(ioClient, tempsData, pressData, humidData):
         ThrottlingError:
             When exceeding Adafruit IO rate limit
     """
-    try:
-        ioClient.send_data(tempsData["feed"].key, tempsData["data"])
-        ioClient.send_data(pressData["feed"].key, pressData["data"])
-        ioClient.send_data(humidData["feed"].key, humidData["data"])
-
-    except RequestError as e:
-        print(f"ADAFRUIT REQUEST ERROR: {e}")
-    
-    except ThrottlingError as e:
-        print(f"ADAFRUIT THROTTLING ERROR: {e}")
+    ioClient.send_data(tempsData["feed"].key, tempsData["data"])
+    ioClient.send_data(pressData["feed"].key, pressData["data"])
+    ioClient.send_data(humidData["feed"].key, humidData["data"])
 
 
 def init_logger(logLvl, logFile=None):
@@ -408,21 +401,30 @@ if __name__ == '__main__':
             # We only want to send data at certain intervals ...
             if delayCounter < ioDelay:
                 delayCounter += 1
-            else:    
-                send_sensor_data(
-                    aio,
-                    {"data": tempC, "feed": tempsFeed},
-                    {"data": press, "feed": pressFeed},
-                    {"data": humid, "feed": humidFeed},
-                )
-                logger.info(f"Uploaded: TEMP: {tempC} - PRESS: {press} - HUMID: {humid}")
-                delayCounter = 1    # Reset counter
+            else:
+                try:    
+                    send_sensor_data(
+                        aio,
+                        {"data": tempC, "feed": tempsFeed},
+                        {"data": press, "feed": pressFeed},
+                        {"data": humid, "feed": humidFeed},
+                    )
+                    logger.info(f"Uploaded: TEMP: {tempC} - PRESS: {press} - HUMID: {humid}")
+
+                except RequestError as e:
+                    logger.error(f"Failed to upload data to Adafruit IO - ADAFRUIT REQUEST ERROR: {e}")
+                
+                except ThrottlingError as e:
+                    logger.error(f"Failed to upload data to Adafruit IO - ADAFRUIT THROTTLING ERROR: {e}")
+
+                finally:
+                    delayCounter = 1    # Reset counter even on failure
 
             # ... but we check the sensors every second
             time.sleep(ioWait)
 
     except KeyboardInterrupt:
-        pass
+        logger.info("Application terminated by user.")
 
     finally:
         sense.clear()
