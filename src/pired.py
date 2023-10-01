@@ -1,60 +1,56 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
+"""f451 Labs piRED application.
+
+This application is designed for the f451 Labs piRED device which is also equipped with 
+a SenseHat add-on. This application will continously read environment data (e.g. temperature, 
+barometric pressure, and humidity from the SenseHat sensors and then upload this data to 
+the Adafruit IO service.
+"""
+
 import time
 import sys
+import tomli
 
 from collections import deque
 from random import randrange, randint
-from configparser import ConfigParser
 from pathlib import Path
 
-from sense_hat import SenseHat, ACTION_PRESSED, ACTION_HELD, ACTION_RELEASED
 from Adafruit_IO import Client, MQTTClient, RequestError, ThrottlingError
 
+import constants as const
 
-# -- CONSTANTS --
-#           - 0    1    2    3    4    5    6    7 -
-_EMPTY_Q_ = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-_EPSILON_ = sys.float_info.epsilon                      # Smallest possible difference.
+try:
+    from sense_hat import SenseHat, ACTION_PRESSED, ACTION_HELD, ACTION_RELEASED
+except ImportError:
+    from mocks.fake_hat import FakeHat as SenseHat, ACTION_PRESSED, ACTION_HELD, ACTION_RELEASED
 
-_RGB_BLACK_ = (0, 0, 0)                                 # RGB values for black (pixel off)
-_RGB_BLUE_ = (0, 0, 255)
-_RGB_GREEN_ = (0, 255, 0)
-_RGB_YELLOW_ = (255, 255, 0)
-_RGB_RED_ = (255, 0, 0)
-_COLORS_  = [_RGB_BLUE_, _RGB_GREEN_, _RGB_YELLOW_, _RGB_RED_]
 
-_MIN_TEMP_ = 0.0        # Min/max sense degrees in C
-_MAX_TEMP_ = 65.0
-_MIN_PRESS_ = 260.0     # Min/max sense pressure in hPa
-_MAX_PRESS_ = 1260.0
-_MIN_HUMID_ = 0.0       # Min/max sense humidity in %
-_MAX_HUMID_ = 100.0
-
-_MAX_COL_ = 8           # sense has an 8x8 LED display
-_MAX_ROW_ = 8
-
-_ROTATE_90_ = 90
-
-_DISPL_BLANK_ = 0       # Display `blank` screen
-_DISPL_TEMP_ = 1        # Show temperature data
-_DISPL_PRESS_ = 2       # Show barometric pressure data
-_DISPL_HUMID_ = 3       # Show humidity data
-_DISPL_SPARKLE_ = 4     # Show random sparkles
-
-# -- GLOBALS --
+# =========================================================
+#          G L O B A L S   A N D   H E L P E R S
+# =========================================================
 IO_USER = ""            # Adafruit IO username
 IO_KEY = ""             # Adafruit IO key
 IO_DELAY = 1            # Delay between uploads
 
 ROTATION = 0
-DISPLAY = _DISPL_SPARKLE_
+DISPLAY = const.DISPL_SPARKLE
 
+EPSILON = sys.float_info.epsilon                      # Smallest possible difference.
+
+#         - 0    1    2    3    4    5    6    7 -
+EMPTY_Q = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+COLORS  = [const.RGB_BLUE, const.RGB_GREEN, const.RGB_YELLOW, const.RGB_RED]
+
+
+# =========================================================
+#              H E L P E R   F U N C T I O N S
+# =========================================================
 # SenseHat Joystick UP event
 def pushed_up(event):
     global ROTATION
 
     if event.action != ACTION_RELEASED:
-        ROTATION = 270 if ROTATION <= 0 else ROTATION - _ROTATE_90_ 
+        ROTATION = 270 if ROTATION <= 0 else ROTATION - const.ROTATE_90 
 
 
 # SenseHat Joystick DOWN event
@@ -62,7 +58,7 @@ def pushed_down(event):
     global ROTATION
 
     if event.action != ACTION_RELEASED:
-        ROTATION = 0 if ROTATION >= 270 else ROTATION + _ROTATE_90_ 
+        ROTATION = 0 if ROTATION >= 270 else ROTATION + const.ROTATE_90 
 
 
 # SenseHat Joystick LEFT event
@@ -86,7 +82,7 @@ def pushed_middle(event):
     global DISPLAY
 
     if event.action != ACTION_RELEASED:
-        DISPLAY = _DISPL_BLANK_
+        DISPLAY = const.DISPL_BLANK
 
 
 # Map value to range
@@ -121,7 +117,7 @@ def convert_to_rgb(minval, maxval, val, colors):
     i, f = int(i_f // 1), i_f % 1  # Split into whole & fractional parts.
 
     # Does it fall exactly on one of the color points?
-    if f < _EPSILON_:
+    if f < EPSILON:
         return colors[i]
     else: # Return a color linearly interpolated in the range between it and 
           # the following one.
@@ -133,10 +129,10 @@ def convert_to_rgb(minval, maxval, val, colors):
 #
 # Update all pixels on sense with new color values
 def update_LED(LED, rotation, data, inMin, inMax):
-    normalized = [round(num_to_range(val, inMin, inMax, 0, _MAX_ROW_)) for val in data]
-    maxCol = min(_MAX_COL_, len(normalized))
+    normalized = [round(num_to_range(val, inMin, inMax, 0, const.LED_MAX_ROW)) for val in data]
+    maxCol = min(const.LED_MAX_COL, len(normalized))
 
-    pixels = [_RGB_BLACK_ if row < (_MAX_ROW_ - normalized[col]) else convert_to_rgb(inMin, inMax, data[col], _COLORS_) for row in range(_MAX_ROW_) for col in range(maxCol)]
+    pixels = [const.RGB_BLACK if row < (const.LED_MAX_ROW - normalized[col]) else convert_to_rgb(inMin, inMax, data[col], COLORS) for row in range(const.LED_MAX_ROW) for col in range(maxCol)]
     LED.set_rotation(rotation)
     LED.set_pixels(pixels)
  
@@ -197,32 +193,33 @@ def send_sensor_data(io_client, tempsData, pressData, humidData):
         print(f"ADAFRUIT THROTTLING ERROR: {e}")
 
 
+# =========================================================
+#      M A I N   F U N C T I O N    /   A C T I O N S
+# =========================================================
 # `main` loop
 if __name__ == '__main__':
-    # -- Initialize ConfigParser --
-    config = ConfigParser()
+    # -- Initialize TOML parser --
+    with open(Path(__file__).parent.joinpath("settings.toml"), mode="rb") as fp:
+        config = tomli.load(fp)
 
-    # settingsPath = Path(__file__).parent.joinpath("settings.ini")
-    config.read(Path(__file__).parent.joinpath("settings.ini"))
-
-    IO_USER = config.get("adafruit_io", "io_username")
-    IO_KEY = config.get("adafruit_io", "io_key")
-    IO_DELAY = int(config.get("defaults", "delay"))
-    ROTATION = int(config.get("defaults", "rotation"))
-    DISPLAY = int(config.get("defaults", "display"))
+    IO_USER = config["AIO_USERNAME"]
+    IO_KEY = config["AIO_KEY"]
+    IO_DELAY = config["DELAY"]
+    ROTATION = config["ROTATION"]
+    DISPLAY = config["DISPLAY"]
 
     # -- Initialize core variables --
-    tempsQ = deque(_EMPTY_Q_, maxlen=_MAX_COL_) # Temperature queue
-    pressQ = deque(_EMPTY_Q_, maxlen=_MAX_COL_) # Pressure queue
-    humidQ = deque(_EMPTY_Q_, maxlen=_MAX_COL_) # Humidity queue
+    tempsQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Temperature queue
+    pressQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Pressure queue
+    humidQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Humidity queue
 
     # -- Initialize Adafruit IO --
     aio = Client(IO_USER, IO_KEY)
     mqtt = MQTTClient(IO_USER, IO_KEY)
 
-    tempsFeed = get_feed_info(aio, config.get("io_feeds", "temperature"))
-    pressFeed = get_feed_info(aio, config.get("io_feeds", "pressure"))
-    humidFeed = get_feed_info(aio, config.get("io_feeds", "humidity"))
+    tempsFeed = get_feed_info(aio, config["FEED_TEMPS"])
+    pressFeed = get_feed_info(aio, config["FEED_PRESS"])
+    humidFeed = get_feed_info(aio, config["FEED_HUMID"])
 
     delayCounter = IO_DELAY                     # Ensure that we upload first reading
 
@@ -247,17 +244,18 @@ if __name__ == '__main__':
             pressQ.append(press)
             humidQ.append(humid)
 
-            if DISPLAY == _DISPL_TEMP_:
-                update_LED(sense, ROTATION, tempsQ, _MIN_TEMP_, _MAX_TEMP_)
-            elif DISPLAY == _DISPL_PRESS_:    
-                update_LED(sense, ROTATION, pressQ, _MIN_PRESS_, _MAX_PRESS_)
-            elif DISPLAY == _DISPL_HUMID_:    
-                update_LED(sense, ROTATION, humidQ, _MIN_HUMID_, _MAX_HUMID_)
-            elif DISPLAY == _DISPL_SPARKLE_:    
+            if DISPLAY == const.DISPL_TEMP:
+                update_LED(sense, ROTATION, tempsQ, const.MIN_TEMP, const.MAX_TEMP)
+            elif DISPLAY == const.DISPL_PRESS:    
+                update_LED(sense, ROTATION, pressQ, const.MIN_PRESS, const.MAX_PRESS)
+            elif DISPLAY == const.DISPL_HUMID:    
+                update_LED(sense, ROTATION, humidQ, const.MIN_HUMID, const.MAX_HUMID)
+            elif DISPLAY == const.DISPL_SPARKLE:    
                 sparkle_LED(sense)
             else:    
                 blank_LED(sense)
 
+            # We only want to send data at certain intervals ...
             if delayCounter < IO_DELAY:
                 delayCounter += 1
             else:    
@@ -267,8 +265,9 @@ if __name__ == '__main__':
                     {"data": press, "feed": pressFeed},
                     {"data": humid, "feed": humidFeed},
                 )
-                delayCounter = 0
+                delayCounter = 1    # Reset counter
 
+            # ... but we check the sensors every second
             time.sleep(1)
 
     except KeyboardInterrupt:
