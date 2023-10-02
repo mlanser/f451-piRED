@@ -11,6 +11,7 @@ import time
 import sys
 import tomli
 import logging
+import asyncio
 
 from collections import deque
 from random import randrange, randint
@@ -43,6 +44,39 @@ LOGNAME = "f451-piRED"
 # =========================================================
 #              H E L P E R   F U N C T I O N S
 # =========================================================
+def init_logger(logLvl, logFile=None):
+    """Initialize logger
+    
+    This function will always initialize the logger with a stream 
+    handler. However, a file handler will only be created if a file
+    name has been provided.
+
+    Args:
+        logLvl:
+            Log level used for handlers
+        logFile:
+            Path object for log file
+
+    Returns:
+        Logger instance
+    """
+    logger = logging.getLogger("f451-piRED")
+    logger.setLevel(logLvl)
+
+    if logFile:
+        fileHandler = logging.FileHandler(logFile)
+        fileHandler.setLevel(logLvl)
+        fileHandler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s: %(message)s"))
+        logger.addHandler(fileHandler)
+
+    streamHandler = logging.StreamHandler()
+    streamHandler.setLevel(logging.ERROR)
+    streamHandler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s: %(message)s"))
+    logger.addHandler(streamHandler)
+
+    return logger
+
+
 def pushed_up(event):
     """SenseHat Joystick UP event"""
     global displRotation
@@ -153,6 +187,17 @@ def convert_to_rgb(num, inMin, inMax, colors):
         return int(r1 + f * (r2 - r1)), int(g1 + f * (g2 - g1)), int(b1 + f * (b2 - b1))
 
 
+def reset_LED(LED):
+    """Reset and clear LED
+
+    Args:
+        LED:
+            SenseHat instance
+    """
+    LED.clear()
+    LED.low_light = False
+
+
 def update_LED(LED, rotation, data, inMin, inMax):
     """
     Update all pixels on SenseHat 8x8 LED with new color values
@@ -208,24 +253,6 @@ def sparkle_LED(LED):
         LED.clear()
 
 
-def get_feed_info(ioClient, feed):
-    """Get Adafruit IO feed info
-
-    Args:
-        ioClient:
-            Adafruit IO client instance
-        feed:
-            'str' with feed (key) name    
-    """
-    try:
-        info = ioClient.feeds(feed)
-    except RequestError as e:
-        print(f"ADAFRUIT REQUEST ERROR: {e} on '{feed}'")
-        info = None
-    
-    return info
-
-
 def read_sensor_data(sensors):
     """
     Read sensor data round values to 1 decimal place
@@ -242,64 +269,6 @@ def read_sensor_data(sensors):
     humid = round(sensors.get_humidity(), 1)        # Humidity 
 
     return tempC, press, humid 
-
-
-def send_sensor_data(ioClient, tempsData, pressData, humidData):
-    """
-    Send sensor data to Adafruit IO
-
-    Args:
-        ioClient:
-            Adafruit IO client instance
-        tempsData:
-            'dict' with 'temperature feed' key and temperature data point
-        pressData:
-            'dict' with 'pressure feed' key and pressure data point
-        humidData:
-            'dict' with 'humidity feed' key and humidity data point
-
-    Raises:
-        RequestError:
-            When API request fails
-        ThrottlingError:
-            When exceeding Adafruit IO rate limit
-    """
-    ioClient.send_data(tempsData["feed"].key, tempsData["data"])
-    ioClient.send_data(pressData["feed"].key, pressData["data"])
-    ioClient.send_data(humidData["feed"].key, humidData["data"])
-
-
-def init_logger(logLvl, logFile=None):
-    """Initialize logger
-    
-    This function will always initialize the logger with a stream 
-    handler. However, a file handler will only be created if a file
-    name has been provided.
-
-    Args:
-        logLvl:
-            Log level used for handlers
-        logFile:
-            Path object for log file
-
-    Returns:
-        Logger instance
-    """
-    logger = logging.getLogger("f451-piRED")
-    logger.setLevel(logLvl)
-
-    if logFile:
-        fileHandler = logging.FileHandler(logFile)
-        fileHandler.setLevel(logLvl)
-        fileHandler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s: %(message)s"))
-        logger.addHandler(fileHandler)
-
-    streamHandler = logging.StreamHandler()
-    streamHandler.setLevel(logging.ERROR)
-    streamHandler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s: %(message)s"))
-    logger.addHandler(streamHandler)
-
-    return logger
 
 
 def get_setting(settings, key, default=None):
@@ -322,24 +291,101 @@ def get_setting(settings, key, default=None):
     return settings[key] if key in settings else default
 
 
+def get_feed_info(ioClient, feed):
+    """Get Adafruit IO feed info
+
+    Args:
+        ioClient:
+            Adafruit IO client instance
+        feed:
+            'str' with feed (key) name    
+    """
+    global logger
+    try:
+        info = ioClient.feeds(feed)
+
+    except RequestError as e:
+        logger.error(f"Failed to get feed info - ADAFRUIT REQUEST ERROR: {e}")
+        raise
+    
+    return info
+
+
+async def _send_sensor_data(ioClient, data):
+    """
+    Send sensor data to Adafruit IO
+
+    Args:
+        ioClient:
+            Adafruit IO client instance
+        data:
+            'dict' with feed key and data point
+
+    Raises:
+        RequestError:
+            When API request fails
+        ThrottlingError:
+            When exceeding Adafruit IO rate limit
+    """
+    global logger
+
+    try:
+        ioClient.send_data(data["feed"].key, data["data"])
+    except RequestError as e:
+        logger.error(f"Upload failed for {data['feed'].key} - REQUEST ERROR: {e}")
+        raise RequestError
+    except ThrottlingError as e:
+        logger.error(f"Upload failed for {data['feed'].key} - THROTTLING ERROR: {e}")
+        raise ThrottlingError
+
+
+async def send_all_sensor_data(ioClient, tempsData, pressData, humidData):
+    """
+    Send sensor data to Adafruit IO
+
+    Args:
+        ioClient:
+            Adafruit IO client instance
+        tempsData:
+            'dict' with 'temperature feed' key and temperature data point
+        pressData:
+            'dict' with 'pressure feed' key and pressure data point
+        humidData:
+            'dict' with 'humidity feed' key and humidity data point
+
+    Raises:
+        RequestError:
+            When API request fails
+        ThrottlingError:
+            When exceeding Adafruit IO rate limit
+    """
+    await asyncio.gather(
+        _send_sensor_data(ioClient, tempsData),
+        _send_sensor_data(ioClient, pressData),
+        _send_sensor_data(ioClient, humidData)
+    )
+
+
 # =========================================================
 #      M A I N   F U N C T I O N    /   A C T I O N S
 # =========================================================
 if __name__ == '__main__':
-    # -- Initialize TOML parser --
+    # Initialize TOML parser
     appDir = Path(__file__).parent
     with open(appDir.joinpath("settings.toml"), mode="rb") as fp:
         config = tomli.load(fp)
 
+    # Get core settings
     ioUser = get_setting(config, const.KWD_AIO_USER, "")
     ioKey = get_setting(config, const.KWD_AIO_KEY, "")
     ioDelay = get_setting(config, const.KWD_DELAY, const.DEF_DELAY)
     ioWait = get_setting(config, const.KWD_WAIT, const.DEF_WAIT)
+    ioThrottle = get_setting(config, const.KWD_THROTTLE, const.DEF_THROTTLE)
     
     displRotation = get_setting(config, const.KWD_ROTATION, const.DEF_ROTATION)
     displMode = get_setting(config, const.KWD_DISPLAY, const.DISPL_SPARKLE)
 
-    # -- Initialize logger --
+    # Initialize logger
     logFile = get_setting(config, const.KWD_LOG_FILE)
     logFileFP = appDir.parent.joinpath(logFile) if logFile else None
 
@@ -348,22 +394,12 @@ if __name__ == '__main__':
         logFileFP
     )
 
-    # -- Initialize core variables --
+    # Initialize core data queues
     tempsQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Temperature queue
     pressQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Pressure queue
     humidQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Humidity queue
 
-    # -- Initialize Adafruit IO --
-    aio = Client(ioUser, ioKey)
-    mqtt = MQTTClient(ioUser, ioKey)
-
-    tempsFeed = get_feed_info(aio, get_setting(config, const.KWD_FEED_TEMPS, ""))
-    pressFeed = get_feed_info(aio, get_setting(config, const.KWD_FEED_PRESS, ""))
-    humidFeed = get_feed_info(aio, get_setting(config, const.KWD_FEED_HUMID, ""))
-
-    delayCounter = ioDelay                     # Ensure that we upload first reading
-
-    # -- Initialize SenseHat --
+    # Initialize SenseHat
     sense = SenseHat()
     sense.clear()                               # Clear 8x8 LED
     sense.low_light = True
@@ -376,9 +412,25 @@ if __name__ == '__main__':
     sense.stick.direction_right = pushed_right
     sense.stick.direction_middle = pushed_middle
 
+    # Initialize Adafruit IO clients
+    aio = Client(ioUser, ioKey)
+    mqtt = MQTTClient(ioUser, ioKey)
+
+    try:
+        tempsFeed = get_feed_info(aio, get_setting(config, const.KWD_FEED_TEMPS, ""))
+        pressFeed = get_feed_info(aio, get_setting(config, const.KWD_FEED_PRESS, ""))
+        humidFeed = get_feed_info(aio, get_setting(config, const.KWD_FEED_HUMID, ""))
+    except RequestError as e:
+        logger.error(f"Application terminated due to REQUEST ERROR: {e}")
+        reset_LED(sense)
+        sys.exit(1)
+
+    # Ensure that we upload first reading
+    delayCounter = maxDelay = ioDelay
+
     # -- Main application loop --
     try:
-        logger.info("-- Start of Data Logging --")
+        logger.info("-- START Data Logging --")
 
         while True:
             tempC, press, humid = read_sensor_data(sense)
@@ -399,26 +451,33 @@ if __name__ == '__main__':
                 blank_LED(sense)
 
             # We only want to send data at certain intervals ...
-            if delayCounter < ioDelay:
+            if delayCounter < maxDelay:
                 delayCounter += 1
             else:
-                try:    
-                    send_sensor_data(
+                try:
+                    asyncio.run(send_all_sensor_data(
                         aio,
                         {"data": tempC, "feed": tempsFeed},
                         {"data": press, "feed": pressFeed},
                         {"data": humid, "feed": humidFeed},
-                    )
-                    logger.info(f"Uploaded: TEMP: {tempC} - PRESS: {press} - HUMID: {humid}")
+                    ))
 
                 except RequestError as e:
-                    logger.error(f"Failed to upload data to Adafruit IO - ADAFRUIT REQUEST ERROR: {e}")
-                
+                    logger.error(f"Application terminated due to REQUEST ERROR: {e}")
+                    raise
+
                 except ThrottlingError as e:
-                    logger.error(f"Failed to upload data to Adafruit IO - ADAFRUIT THROTTLING ERROR: {e}")
+                    # Keep increasing 'maxDelay' each time we get a 'ThrottlingError'
+                    maxDelay += ioThrottle
+                    
+                else:
+                    # Reset 'maxDelay' back to normal 'ioDelay' on successful upload
+                    maxDelay = ioDelay
+                    logger.info(f"Uploaded: TEMP: {tempC} - PRESS: {press} - HUMID: {humid}")
 
                 finally:
-                    delayCounter = 1    # Reset counter even on failure
+                    # Reset counter even on failure
+                    delayCounter = 1
 
             # ... but we check the sensors every second
             time.sleep(ioWait)
@@ -427,6 +486,5 @@ if __name__ == '__main__':
         logger.info("Application terminated by user.")
 
     finally:
-        sense.clear()
-        sense.low_light = False
-        logger.info("-- End of Data Logging --")
+        reset_LED(sense)
+        logger.info("-- END Data Logging --")

@@ -39,6 +39,7 @@ LED_MAX_ROW = 8
 
 DEF_DELAY = 59          # Default delay between uploads
 DEF_WAIT = 1            # Default delay between sensor reads
+DEF_THROTTLE = 120      # Default additional delay on 'ThrottlingError'
 DEF_ROTATION = 0
 
 LOG_CRITICAL: str = "CRITICAL"
@@ -63,6 +64,7 @@ KWD_AIO_USER: str = "AIO_USERNAME"
 KWD_AIO_KEY: str = "AIO_KEY"
 KWD_DELAY: str = "DELAY"
 KWD_WAIT: str = "WAIT"
+KWD_THROTTLE: str = "THROTTLE"
 KWD_ROTATION: str = "ROTATION"
 KWD_DISPLAY: str = "DISPLAY"
 KWD_LOG_LEVEL: str = "LOGLVL"
