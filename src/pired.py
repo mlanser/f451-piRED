@@ -60,15 +60,6 @@ class Shutdown:
         self.exitNow = True
 
 
-if __name__ == '__main__':
-  killer = GracefulKiller()
-  while not killer.kill_now:
-    time.sleep(1)
-    print("doing something in a loop ...")
-   
-  print("End of the program. I was killed gracefully :)")
-
-
 # =========================================================
 #              H E L P E R   F U N C T I O N S
 # =========================================================
@@ -398,10 +389,10 @@ async def send_all_sensor_data(ioClient, tempsData, pressData, humidData):
 #      M A I N   F U N C T I O N    /   A C T I O N S
 # =========================================================
 if __name__ == '__main__':
-    # Initialize TOML parser
+    shutdown = Shutdown()
     appDir = Path(__file__).parent
 
-    # Load 'settings.toml' file
+    # Initialize TOML parser and load 'settings.toml' file
     try:
         with open(appDir.joinpath("settings.toml"), mode="rb") as fp:
             config = tomlib.load(fp)
@@ -465,7 +456,7 @@ if __name__ == '__main__':
     try:
         logger.info("-- START Data Logging --")
 
-        while True:
+        while not shutdown.exitNow:
             tempC, press, humid = read_sensor_data(sense)
 
             tempsQ.append(tempC)
