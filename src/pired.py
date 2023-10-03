@@ -9,9 +9,9 @@ the Adafruit IO service.
 
 import time
 import sys
-import tomli
 import logging
 import asyncio
+import signal
 
 from collections import deque
 from random import randrange, randint
@@ -20,6 +20,11 @@ from pathlib import Path
 from Adafruit_IO import Client, MQTTClient, RequestError, ThrottlingError
 
 import constants as const
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 try:
     from sense_hat import SenseHat, ACTION_PRESSED, ACTION_HELD, ACTION_RELEASED
@@ -39,6 +44,29 @@ COLORS  = [const.RGB_BLUE, const.RGB_GREEN, const.RGB_YELLOW, const.RGB_RED]
 LOGLVL = "INFO"
 LOGFILE = "f451-piRED.log"
 LOGNAME = "f451-piRED"
+
+# This class is designed to greacully catch SIGTERM and SIGINT 
+# so that we can run some cleran-up tasks before shutting down
+#
+# NOTE: It's not possible to catch SIGKILL 
+class Shutdown:
+    exitNow = False
+
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.do_exit)
+        signal.signal(signal.SIGTERM, self.do_exit)
+
+    def do_exit(self, *args):
+        self.exitNow = True
+
+
+if __name__ == '__main__':
+  killer = GracefulKiller()
+  while not killer.kill_now:
+    time.sleep(1)
+    print("doing something in a loop ...")
+   
+  print("End of the program. I was killed gracefully :)")
 
 
 # =========================================================
@@ -372,8 +400,13 @@ async def send_all_sensor_data(ioClient, tempsData, pressData, humidData):
 if __name__ == '__main__':
     # Initialize TOML parser
     appDir = Path(__file__).parent
-    with open(appDir.joinpath("settings.toml"), mode="rb") as fp:
-        config = tomli.load(fp)
+
+    # Load 'settings.toml' file
+    try:
+        with open(appDir.joinpath("settings.toml"), mode="rb") as fp:
+            config = tomlib.load(fp)
+    except tomlib.TOMLDecodeError:
+        sys.exit("Invalid `settings.toml` file")      
 
     # Get core settings
     ioUser = get_setting(config, const.KWD_AIO_USER, "")
