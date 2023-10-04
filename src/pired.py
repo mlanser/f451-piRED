@@ -303,22 +303,12 @@ def update_LED_progress(LED, inVal, maxVal=100):
             Max value so we can calculate percentage
     """
     # Convert value to percentange and map against num pixels in a row
-    normalized = int(num_to_range(int(inVal / maxVal), 0, 100, 0, const.LED_MAX_COL))
+    normalized = int(num_to_range(inVal / maxVal, 0.0, 1.0, 0.0, float(const.LED_MAX_COL)))
     
     # Update LED bottom row
     for x in range(0, normalized):
-        LED.set_pixel(x, const.LED_MAX_ROW - 1, const.RGB_PROGRESS)
+        LED.set_pixel(x, 0, const.RGB_PROGRESS)
 
-
-def blank_LED(LED):
-    """Show blank LED
-
-    Args:
-        LED:
-            SenseHat instance
-    """
-    LED.clear()
-    
 
 def sparkle_LED(LED):
     """Show random sparkles on LED
@@ -340,6 +330,16 @@ def sparkle_LED(LED):
     else:    
         LED.clear()
 
+
+def blank_LED(LED):
+    """Show blank LED
+
+    Args:
+        LED:
+            SenseHat instance
+    """
+    LED.clear()
+    
 
 def read_sensor_data(sensors):
     """
