@@ -35,7 +35,8 @@ except ImportError:
 # =========================================================
 #          G L O B A L S   A N D   H E L P E R S
 # =========================================================
-EPSILON = sys.float_info.epsilon                      # Smallest possible difference.
+EPSILON = sys.float_info.epsilon    # Smallest possible difference.
+EXIT_NOW = False                    # Global flag for immediate (graceful) exit
 
 #         - 0    1    2    3    4    5    6    7 -
 EMPTY_Q = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -45,31 +46,20 @@ LOGLVL = "INFO"
 LOGFILE = "f451-piRED.log"
 LOGNAME = "f451-piRED"
 
-EXIT_NOW = False    # Global flag for tracking if we need to exit gracefully
-
-# class Shutdown:
-#     """
-#     This class catches SIGTERM and SIGINT so that we can run some 
-#     clean-up tasks before shutting down
-    
-#     NOTE: It's not possible to catch SIGKILL
-    
-#     Based on code from: https://stackoverflow.com/questions/18499497/how-to-process-sigterm-signal-gracefully/31464349#31464349
-#     """
-#     exitNow = False
-
-#     def __init__(self):
-#         signal.signal(signal.SIGINT, self.exit_now)
-#         signal.signal(signal.SIGTERM, self.exit_now)
-
-#     def exit_now(self, *args):
-#         self.exitNow = True
-
 
 # =========================================================
 #              H E L P E R   F U N C T I O N S
 # =========================================================
 def exit_now(self, *args):
+    """Changes global 'EXIT_NOW' flag.
+    
+    This function is called/triggered by signals (e.g. SIGINT, SIGTERM, etc.)
+    and allows us run some clean-up tasks before shutting down.
+    
+    NOTE: It's not possible to catch SIGKILL
+    
+    Based on code from: https://stackoverflow.com/questions/18499497/how-to-process-sigterm-signal-gracefully/31464349#31464349
+    """
     global EXIT_NOW
     EXIT_NOW = True
 
@@ -105,6 +95,34 @@ def init_logger(logLvl, logFile=None):
     logger.addHandler(streamHandler)
 
     return logger
+
+
+def init_SenseHat(defRotation=const.DEF_ROTATION):
+    """Initialize SenseHat
+    
+    This function initializes the SenseHat device, sets some default 
+    parameters, and clears th LED.
+
+    Args:
+        defRotation:
+            Default rotation
+
+    Returns:
+        SenseHat instance
+    """
+    sense = SenseHat()
+    sense.clear()                               # Clear 8x8 LED
+    sense.low_light = True
+    sense.set_rotation(defRotation)             # Set initial rotation
+    sense.set_imu_config(False, False, False)   # Disable IMU functions
+
+    sense.stick.direction_up = pushed_up
+    sense.stick.direction_down = pushed_down
+    sense.stick.direction_left = pushed_left
+    sense.stick.direction_right = pushed_right
+    sense.stick.direction_middle = pushed_middle
+
+    return sense
 
 
 def pushed_up(event):
@@ -440,10 +458,11 @@ async def send_all_sensor_data(ioClient, tempsData, pressData, humidData):
 #      M A I N   F U N C T I O N    /   A C T I O N S
 # =========================================================
 if __name__ == '__main__':
+    # Init signals
     signal.signal(signal.SIGINT, exit_now)
     signal.signal(signal.SIGTERM, exit_now)
 
-    # shutdown = Shutdown()
+    # Get app dir
     appDir = Path(__file__).parent
 
     # Initialize TOML parser and load 'settings.toml' file
@@ -451,7 +470,7 @@ if __name__ == '__main__':
         with open(appDir.joinpath("settings.toml"), mode="rb") as fp:
             config = tomllib.load(fp)
     except tomllib.TOMLDecodeError:
-        sys.exit("Invalid `settings.toml` file")      
+        sys.exit("Invalid 'settings.toml' file")      
 
     # Get core settings
     ioUser = get_setting(config, const.KWD_AIO_USER, "")
@@ -478,20 +497,8 @@ if __name__ == '__main__':
     pressQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Pressure queue
     humidQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Humidity queue
 
-    # Initialize SenseHat
-    sense = SenseHat()
-    sense.clear()                               # Clear 8x8 LED
-    sense.low_light = True
-    sense.set_rotation(displRotation)           # Set initial rotation
-    sense.set_imu_config(False, False, False)   # Disable IMU functions
-
-    sense.stick.direction_up = pushed_up
-    sense.stick.direction_down = pushed_down
-    sense.stick.direction_left = pushed_left
-    sense.stick.direction_right = pushed_right
-    sense.stick.direction_middle = pushed_middle
-
-    # Initialize Adafruit IO clients
+    # Initialize SenseHat and Adafruit IO clients
+    sense = init_SenseHat(displRotation)
     aio = Client(ioUser, ioKey)
     mqtt = MQTTClient(ioUser, ioKey)
 
@@ -529,15 +536,12 @@ if __name__ == '__main__':
             blank_LED(sense)
 
         if displProgress:
-            update_LED_progress(sense, 0)    
+            update_LED_progress(sense, delayCounter, maxDelay)    
 
         # We only want to send data at certain intervals ...
         if delayCounter < maxDelay:
             delayCounter += 1
 
-            if displProgress:
-                update_LED_progress(sense, delayCounter, maxDelay)
-        
         else:
             try:
                 asyncio.run(send_all_sensor_data(
