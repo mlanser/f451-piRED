@@ -42,42 +42,44 @@ DEF_DELAY = 59          # Default delay between uploads
 DEF_WAIT = 1            # Default delay between sensor reads
 DEF_THROTTLE = 120      # Default additional delay on 'ThrottlingError'
 DEF_ROTATION = 0
+DEF_SLEEP = 600
 
-LOG_CRITICAL: str = "CRITICAL"
-LOG_DEBUG: str = "DEBUG"
-LOG_ERROR: str = "ERROR"
-LOG_INFO: str = "INFO"
-LOG_NOTSET: str = "NOTSET"
-LOG_OFF: str = "OFF"
-LOG_WARNING: str = "WARNING"
+LOG_CRITICAL = "CRITICAL"
+LOG_DEBUG = "DEBUG"
+LOG_ERROR = "ERROR"
+LOG_INFO = "INFO"
+LOG_NOTSET = "NOTSET"
+LOG_OFF = "OFF"
+LOG_WARNING = "WARNING"
 
-LOG_LVL_OFF: int = -1
-LOG_LVL_MIN: int = -1
-LOG_LVL_MAX: int = 100
+LOG_LVL_OFF = -1
+LOG_LVL_MIN = -1
+LOG_LVL_MAX = 100
 
-STATUS_SUCCESS: str = "success"
-STATUS_FAILURE: str = "failure"
+STATUS_SUCCESS = "success"
+STATUS_FAILURE = "failure"
 
-STATUS_ON: str = "on"
-STATUS_OFF: str = "off"
-STATUS_TRUE: str = "true"
-STATUS_FALSE: str = "false"
-STATUS_YES: str = "yes"
-STATUS_NO: str = "no"
+STATUS_ON = "on"
+STATUS_OFF = "off"
+STATUS_TRUE = "true"
+STATUS_FALSE = "false"
+STATUS_YES = "yes"
+STATUS_NO = "no"
 
 # =========================================================
 #    K E Y W O R D S   F O R   C O N F I G   F I L E S
 # =========================================================
-KWD_AIO_USER: str = "AIO_USERNAME"
-KWD_AIO_KEY: str = "AIO_KEY"
-KWD_DELAY: str = "DELAY"
-KWD_WAIT: str = "WAIT"
-KWD_THROTTLE: str = "THROTTLE"
-KWD_ROTATION: str = "ROTATION"
-KWD_DISPLAY: str = "DISPLAY"
-KWD_PROGRESS: str = "PROGRESS"
-KWD_LOG_LEVEL: str = "LOGLVL"
-KWD_LOG_FILE: str = "LOGFILE"
-KWD_FEED_TEMPS: str = "FEED_TEMPS"
-KWD_FEED_PRESS: str = "FEED_PRESS"
-KWD_FEED_HUMID: str = "FEED_HUMID"
+KWD_AIO_USER = "AIO_USERNAME"
+KWD_AIO_KEY = "AIO_KEY"
+KWD_DELAY = "DELAY"
+KWD_WAIT = "WAIT"
+KWD_THROTTLE = "THROTTLE"
+KWD_ROTATION = "ROTATION"
+KWD_DISPLAY = "DISPLAY"
+KWD_PROGRESS = "PROGRESS"
+KWD_SLEEP = "SLEEP"
+KWD_LOG_LEVEL = "LOGLVL"
+KWD_LOG_FILE = "LOGFILE"
+KWD_FEED_TEMPS = "FEED_TEMPS"
+KWD_FEED_PRESS = "FEED_PRESS"
+KWD_FEED_HUMID = "FEED_HUMID"

@@ -14,6 +14,7 @@ DELAY = 59      # Delay in seconds between uploads to Adafruit IO. Smaller numbe
 WAIT = 1        # Delay in seconds between sensor reads
 THROTTLE = 120  # Additional delay in seconds to be applied on 'ThottlingError'
 PROGRESS = "ON" # Show upload progress bar on LED
+SLEEP = 600     # Delay in seconds until screen is blanked - screen saver mode ;-)
 
 LOGLVL = "INFO" # Logging level (See: https://docs.python.org/3/library/logging.html#logging-levels)
 LOGFILE = "<FILE NAME>"

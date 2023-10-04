@@ -126,43 +126,72 @@ def init_SenseHat(defRotation=const.DEF_ROTATION):
 
 
 def pushed_up(event):
-    """SenseHat Joystick UP event"""
+    """SenseHat Joystick UP event
+    
+    Rotate display by -90 degrees and reset screen blanking
+    """
     global displRotation
+    global displSleep
+    global sleepCounter
 
     if event.action != ACTION_RELEASED:
-        displRotation = 270 if displRotation <= 0 else displRotation - const.ROTATE_90 
+        displRotation = 270 if displRotation <= 0 else displRotation - const.ROTATE_90
+        sleepCounter = displSleep 
 
 
 def pushed_down(event):
-    """SenseHat Joystick DOWN event"""
+    """SenseHat Joystick DOWN event
+    
+    Rotate display by +90 degrees and reset screen blanking
+    """
     global displRotation
+    global displSleep
+    global sleepCounter
 
     if event.action != ACTION_RELEASED:
         displRotation = 0 if displRotation >= 270 else displRotation + const.ROTATE_90 
+        sleepCounter = displSleep 
 
 
 def pushed_left(event):
-    """SenseHat Joystick LEFT event"""
+    """SenseHat Joystick LEFT event
+    
+    Switch display mode by 1 mode and reset screen blanking
+    """
     global displMode
+    global displSleep
+    global sleepCounter
 
     if event.action != ACTION_RELEASED:
         displMode = 4 if displMode <= 1 else displMode - 1
+        sleepCounter = displSleep 
 
 
 def pushed_right(event):
-    """SenseHat Joystick RIGHT event"""
+    """SenseHat Joystick RIGHT event
+    
+    Switch display mode by 1 mode and reset screen blanking
+    """
     global displMode
+    global displSleep
+    global sleepCounter
 
     if event.action != ACTION_RELEASED:
         displMode = 1 if displMode >= 4 else displMode + 1
+        sleepCounter = displSleep 
 
 
 def pushed_middle(event):
-    """SenseHat Joystick RIGHT event"""
+    """SenseHat Joystick RIGHT event
+    
+    Turn off display and reset screen blanking
+    """
     global displMode
+    global sleepCounter
 
     if event.action != ACTION_RELEASED:
         displMode = const.DISPL_BLANK
+        sleepCounter = 1 
 
 
 def num_to_range(num, inMin, inMax, outMin, outMax):
@@ -482,6 +511,7 @@ if __name__ == '__main__':
     displRotation = get_setting(config, const.KWD_ROTATION, const.DEF_ROTATION)
     displMode = get_setting(config, const.KWD_DISPLAY, const.DISPL_SPARKLE)
     displProgress = convert_to_bool(get_setting(config, const.KWD_PROGRESS, const.STATUS_ON))
+    displSleep = get_setting(config, const.KWD_SLEEP, const.DEF_SLEEP)
 
     # Initialize logger
     logFile = get_setting(config, const.KWD_LOG_FILE)
@@ -514,6 +544,7 @@ if __name__ == '__main__':
 
     # -- Main application loop --
     delayCounter = maxDelay = ioDelay       # Ensure that we upload first reading
+    sleepCounter = displSleep               # Reset counter for screen blanking
     logger.info("-- START Data Logging --")
 
     # while not shutdown.exitNow:
@@ -524,19 +555,27 @@ if __name__ == '__main__':
         pressQ.append(press)
         humidQ.append(humid)
 
-        if displMode == const.DISPL_TEMP:
-            update_LED(sense, displRotation, tempsQ, const.MIN_TEMP, const.MAX_TEMP)
-        elif displMode == const.DISPL_PRESS:    
-            update_LED(sense, displRotation, pressQ, const.MIN_PRESS, const.MAX_PRESS)
-        elif displMode == const.DISPL_HUMID:    
-            update_LED(sense, displRotation, humidQ, const.MIN_HUMID, const.MAX_HUMID)
-        elif displMode == const.DISPL_SPARKLE:    
-            sparkle_LED(sense)
-        else:    
+        if sleepCounter == 1:
+            # Blank screen
             blank_LED(sense)
+        elif sleepCounter > 1:
+            if displMode == const.DISPL_TEMP:
+                update_LED(sense, displRotation, tempsQ, const.MIN_TEMP, const.MAX_TEMP)
+            elif displMode == const.DISPL_PRESS:    
+                update_LED(sense, displRotation, pressQ, const.MIN_PRESS, const.MAX_PRESS)
+            elif displMode == const.DISPL_HUMID:    
+                update_LED(sense, displRotation, humidQ, const.MIN_HUMID, const.MAX_HUMID)
+            elif displMode == const.DISPL_SPARKLE:    
+                sparkle_LED(sense)
+            else:    
+                blank_LED(sense)
 
-        if displProgress:
-            update_LED_progress(sense, delayCounter, maxDelay)    
+            if displProgress:
+                update_LED_progress(sense, delayCounter, maxDelay)    
+
+        # Update sleep counter for screen blanking as needed
+        if sleepCounter > 0:    
+            sleepCounter -= 1
 
         # We only want to send data at certain intervals ...
         if delayCounter < maxDelay:
