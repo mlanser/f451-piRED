@@ -2,9 +2,16 @@
 """f451 Labs piRED application.
 
 This application is designed for the f451 Labs piRED device which is also equipped with 
-a SenseHat add-on. This application will continously read environment data (e.g. temperature, 
-barometric pressure, and humidity from the SenseHat sensors and then upload this data to 
+a SenseHat add-on. The object is to continously read environment data (e.g. temperature, 
+barometric pressure, and humidity from the SenseHat sensors and then upload the data to 
 the Adafruit IO service.
+
+To launch this application from terminal:
+
+    $ nohup python -u pired.py > pired.out &
+
+This will start the application in the background and it will keep running even after 
+terminal window is closed. Any output will be redirected to the 'pired.out' file.    
 """
 
 import time
@@ -547,17 +554,18 @@ if __name__ == '__main__':
     sleepCounter = displSleep               # Reset counter for screen blanking
     logger.info("-- START Data Logging --")
 
-    # while not shutdown.exitNow:
     while not EXIT_NOW:
+        # We check the sensors each time we loop through ...
         tempC, press, humid = read_sensor_data(sense)
 
+        # ... and add the data to the queues
         tempsQ.append(tempC)
         pressQ.append(press)
         humidQ.append(humid)
 
+        # Check 'sleepCounter' before we display anything
         if sleepCounter == 1:
-            # Blank screen
-            blank_LED(sense)
+            blank_LED(sense)    # Need to blank screen once
         elif sleepCounter > 1:
             if displMode == const.DISPL_TEMP:
                 update_LED(sense, displRotation, tempsQ, const.MIN_TEMP, const.MAX_TEMP)
@@ -577,10 +585,9 @@ if __name__ == '__main__':
         if sleepCounter > 0:    
             sleepCounter -= 1
 
-        # We only want to send data at certain intervals ...
+        # Is it time to upload data?
         if delayCounter < maxDelay:
-            delayCounter += 1
-
+            delayCounter += 1       # We send data at set intervals
         else:
             try:
                 asyncio.run(send_all_sensor_data(
@@ -607,7 +614,7 @@ if __name__ == '__main__':
                 # Reset counter even on failure
                 delayCounter = 1
 
-        # ... but we check the sensors every second
+        # Let's rest a bit before we go through the loop again
         time.sleep(ioWait)
 
     # A bit of clean-up before we exit
