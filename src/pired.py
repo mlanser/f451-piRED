@@ -481,7 +481,7 @@ if __name__ == '__main__':
     
     displRotation = get_setting(config, const.KWD_ROTATION, const.DEF_ROTATION)
     displMode = get_setting(config, const.KWD_DISPLAY, const.DISPL_SPARKLE)
-    displProgress = get_setting(config, convert_to_bool(const.KWD_PROGRESS), True)
+    displProgress = convert_to_bool(get_setting(config, const.KWD_PROGRESS, const.STATUS_ON))
 
     # Initialize logger
     logFile = get_setting(config, const.KWD_LOG_FILE)
