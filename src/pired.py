@@ -45,24 +45,35 @@ LOGLVL = "INFO"
 LOGFILE = "f451-piRED.log"
 LOGNAME = "f451-piRED"
 
-# This class is designed to greacully catch SIGTERM and SIGINT 
-# so that we can run some cleran-up tasks before shutting down
-#
-# NOTE: It's not possible to catch SIGKILL 
-class Shutdown:
-    exitNow = False
+EXIT_NOW = False    # Global flag for tracking if we need to exit gracefully
 
-    def __init__(self):
-        signal.signal(signal.SIGINT, self.do_exit)
-        signal.signal(signal.SIGTERM, self.do_exit)
+# class Shutdown:
+#     """
+#     This class catches SIGTERM and SIGINT so that we can run some 
+#     clean-up tasks before shutting down
+    
+#     NOTE: It's not possible to catch SIGKILL
+    
+#     Based on code from: https://stackoverflow.com/questions/18499497/how-to-process-sigterm-signal-gracefully/31464349#31464349
+#     """
+#     exitNow = False
 
-    def do_exit(self, *args):
-        self.exitNow = True
+#     def __init__(self):
+#         signal.signal(signal.SIGINT, self.exit_now)
+#         signal.signal(signal.SIGTERM, self.exit_now)
+
+#     def exit_now(self, *args):
+#         self.exitNow = True
 
 
 # =========================================================
 #              H E L P E R   F U N C T I O N S
 # =========================================================
+def exit_now(self, *args):
+    global EXIT_NOW
+    EXIT_NOW = True
+
+
 def init_logger(logLvl, logFile=None):
     """Initialize logger
     
@@ -206,6 +217,27 @@ def convert_to_rgb(num, inMin, inMax, colors):
         return int(r1 + f * (r2 - r1)), int(g1 + f * (g2 - g1)), int(b1 + f * (b2 - b1))
 
 
+def convert_to_bool(inVal):
+    """Convert value to boolean.
+
+    If value is a string, then we check against predefined string 
+    constants. If value is an integer, then we return 'True' if value
+    is greater than 0 (zero).
+
+    For anything else we return a 'False'. 
+
+    Args:
+        inVal:
+            Value to be converted to boolean.
+    """
+    if isinstance(inVal, int) or isinstance(inVal, float):
+        return (abs(int(inVal)) > 0)
+    elif isinstance(inVal, str):
+        return (inVal.lower() in [const.STATUS_ON, const.STATUS_TRUE, const.STATUS_YES])
+    else:
+        return False
+
+
 def reset_LED(LED):
     """Reset and clear LED
 
@@ -240,6 +272,25 @@ def update_LED(LED, rotation, data, inMin, inMax):
     LED.set_rotation(rotation)
     LED.set_pixels(pixels)
  
+
+def update_LED_progress(LED, inVal, maxVal=100):
+    """Update progressbar on bottom row of LED
+
+    Args:
+        LED:
+            SenseHat instance
+        inVal:
+            Value to represent on progressbar
+        maxVal:
+            Max value so we can calculate percentage
+    """
+    # Convert value to percentange and map against num pixels in a row
+    normalized = int(num_to_range(int(inVal / maxVal), 0, 100, 0, const.LED_MAX_COL))
+    
+    # Update LED bottom row
+    for x in range(0, normalized):
+        LED.set_pixel(x, const.LED_MAX_ROW - 1, const.RGB_PROGRESS)
+
 
 def blank_LED(LED):
     """Show blank LED
@@ -389,14 +440,17 @@ async def send_all_sensor_data(ioClient, tempsData, pressData, humidData):
 #      M A I N   F U N C T I O N    /   A C T I O N S
 # =========================================================
 if __name__ == '__main__':
-    shutdown = Shutdown()
+    signal.signal(signal.SIGINT, exit_now)
+    signal.signal(signal.SIGTERM, exit_now)
+
+    # shutdown = Shutdown()
     appDir = Path(__file__).parent
 
     # Initialize TOML parser and load 'settings.toml' file
     try:
         with open(appDir.joinpath("settings.toml"), mode="rb") as fp:
-            config = tomlib.load(fp)
-    except tomlib.TOMLDecodeError:
+            config = tomllib.load(fp)
+    except tomllib.TOMLDecodeError:
         sys.exit("Invalid `settings.toml` file")      
 
     # Get core settings
@@ -408,6 +462,7 @@ if __name__ == '__main__':
     
     displRotation = get_setting(config, const.KWD_ROTATION, const.DEF_ROTATION)
     displMode = get_setting(config, const.KWD_DISPLAY, const.DISPL_SPARKLE)
+    displProgress = get_setting(config, convert_to_bool(const.KWD_PROGRESS), True)
 
     # Initialize logger
     logFile = get_setting(config, const.KWD_LOG_FILE)
@@ -444,71 +499,74 @@ if __name__ == '__main__':
         tempsFeed = get_feed_info(aio, get_setting(config, const.KWD_FEED_TEMPS, ""))
         pressFeed = get_feed_info(aio, get_setting(config, const.KWD_FEED_PRESS, ""))
         humidFeed = get_feed_info(aio, get_setting(config, const.KWD_FEED_HUMID, ""))
+
     except RequestError as e:
         logger.error(f"Application terminated due to REQUEST ERROR: {e}")
         reset_LED(sense)
         sys.exit(1)
 
-    # Ensure that we upload first reading
-    delayCounter = maxDelay = ioDelay
-
     # -- Main application loop --
-    try:
-        logger.info("-- START Data Logging --")
+    delayCounter = maxDelay = ioDelay       # Ensure that we upload first reading
+    logger.info("-- START Data Logging --")
 
-        while not shutdown.exitNow:
-            tempC, press, humid = read_sensor_data(sense)
+    # while not shutdown.exitNow:
+    while not EXIT_NOW:
+        tempC, press, humid = read_sensor_data(sense)
 
-            tempsQ.append(tempC)
-            pressQ.append(press)
-            humidQ.append(humid)
+        tempsQ.append(tempC)
+        pressQ.append(press)
+        humidQ.append(humid)
 
-            if displMode == const.DISPL_TEMP:
-                update_LED(sense, displRotation, tempsQ, const.MIN_TEMP, const.MAX_TEMP)
-            elif displMode == const.DISPL_PRESS:    
-                update_LED(sense, displRotation, pressQ, const.MIN_PRESS, const.MAX_PRESS)
-            elif displMode == const.DISPL_HUMID:    
-                update_LED(sense, displRotation, humidQ, const.MIN_HUMID, const.MAX_HUMID)
-            elif displMode == const.DISPL_SPARKLE:    
-                sparkle_LED(sense)
-            else:    
-                blank_LED(sense)
+        if displMode == const.DISPL_TEMP:
+            update_LED(sense, displRotation, tempsQ, const.MIN_TEMP, const.MAX_TEMP)
+        elif displMode == const.DISPL_PRESS:    
+            update_LED(sense, displRotation, pressQ, const.MIN_PRESS, const.MAX_PRESS)
+        elif displMode == const.DISPL_HUMID:    
+            update_LED(sense, displRotation, humidQ, const.MIN_HUMID, const.MAX_HUMID)
+        elif displMode == const.DISPL_SPARKLE:    
+            sparkle_LED(sense)
+        else:    
+            blank_LED(sense)
 
-            # We only want to send data at certain intervals ...
-            if delayCounter < maxDelay:
-                delayCounter += 1
+        if displProgress:
+            update_LED_progress(sense, 0)    
+
+        # We only want to send data at certain intervals ...
+        if delayCounter < maxDelay:
+            delayCounter += 1
+
+            if displProgress:
+                update_LED_progress(sense, delayCounter, maxDelay)
+        
+        else:
+            try:
+                asyncio.run(send_all_sensor_data(
+                    aio,
+                    {"data": tempC, "feed": tempsFeed},
+                    {"data": press, "feed": pressFeed},
+                    {"data": humid, "feed": humidFeed},
+                ))
+
+            except RequestError as e:
+                logger.error(f"Application terminated due to REQUEST ERROR: {e}")
+                raise
+
+            except ThrottlingError as e:
+                # Keep increasing 'maxDelay' each time we get a 'ThrottlingError'
+                maxDelay += ioThrottle
+                
             else:
-                try:
-                    asyncio.run(send_all_sensor_data(
-                        aio,
-                        {"data": tempC, "feed": tempsFeed},
-                        {"data": press, "feed": pressFeed},
-                        {"data": humid, "feed": humidFeed},
-                    ))
+                # Reset 'maxDelay' back to normal 'ioDelay' on successful upload
+                maxDelay = ioDelay
+                logger.info(f"Uploaded: TEMP: {tempC} - PRESS: {press} - HUMID: {humid}")
 
-                except RequestError as e:
-                    logger.error(f"Application terminated due to REQUEST ERROR: {e}")
-                    raise
+            finally:
+                # Reset counter even on failure
+                delayCounter = 1
 
-                except ThrottlingError as e:
-                    # Keep increasing 'maxDelay' each time we get a 'ThrottlingError'
-                    maxDelay += ioThrottle
-                    
-                else:
-                    # Reset 'maxDelay' back to normal 'ioDelay' on successful upload
-                    maxDelay = ioDelay
-                    logger.info(f"Uploaded: TEMP: {tempC} - PRESS: {press} - HUMID: {humid}")
+        # ... but we check the sensors every second
+        time.sleep(ioWait)
 
-                finally:
-                    # Reset counter even on failure
-                    delayCounter = 1
-
-            # ... but we check the sensors every second
-            time.sleep(ioWait)
-
-    except KeyboardInterrupt:
-        logger.info("Application terminated by user.")
-
-    finally:
-        reset_LED(sense)
-        logger.info("-- END Data Logging --")
+    # A bit of clean-up before we exit
+    logger.info("-- END Data Logging --")
+    reset_LED(sense)

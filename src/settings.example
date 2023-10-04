@@ -13,6 +13,7 @@ DISPLAY = 4     # Default display [1, 2, 3, 4]
 DELAY = 59      # Delay in seconds between uploads to Adafruit IO. Smaller number -> more freq uploads -> higher data rate
 WAIT = 1        # Delay in seconds between sensor reads
 THROTTLE = 120  # Additional delay in seconds to be applied on 'ThottlingError'
+PROGRESS = "ON" # Show upload progress bar on LED
 
 LOGLVL = "INFO" # Logging level (See: https://docs.python.org/3/library/logging.html#logging-levels)
 LOGFILE = "<FILE NAME>"

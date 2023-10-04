@@ -17,6 +17,7 @@ RGB_BLUE = (0, 0, 255)
 RGB_GREEN = (0, 255, 0)
 RGB_YELLOW = (255, 255, 0)
 RGB_RED = (255, 0, 0)
+RGB_PROGRESS = (127, 0, 255) # Use for progressbar at bottom of LED
 
 ROTATE_90 = 90          # Rotate 90 degrees    
 
@@ -57,6 +58,13 @@ LOG_LVL_MAX: int = 100
 STATUS_SUCCESS: str = "success"
 STATUS_FAILURE: str = "failure"
 
+STATUS_ON: str = "on"
+STATUS_OFF: str = "off"
+STATUS_TRUE: str = "true"
+STATUS_FALSE: str = "false"
+STATUS_YES: str = "yes"
+STATUS_NO: str = "no"
+
 # =========================================================
 #    K E Y W O R D S   F O R   C O N F I G   F I L E S
 # =========================================================
@@ -67,6 +75,7 @@ KWD_WAIT: str = "WAIT"
 KWD_THROTTLE: str = "THROTTLE"
 KWD_ROTATION: str = "ROTATION"
 KWD_DISPLAY: str = "DISPLAY"
+KWD_PROGRESS: str = "PROGRESS"
 KWD_LOG_LEVEL: str = "LOGLVL"
 KWD_LOG_FILE: str = "LOGFILE"
 KWD_FEED_TEMPS: str = "FEED_TEMPS"
