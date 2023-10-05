@@ -241,7 +241,7 @@ class Device:
         
         # Update LED bottom row
         for x in range(0, normalized):
-            self.sense.set_pixel(x, 0, const.RGB_PROGRESS)
+            self.sense.set_pixel(x, const.LED_MAX_ROW - 1, const.RGB_PROGRESS)
 
     async def send_sensor_data(self, data):
         """Send sensor data to Adafruit IO
