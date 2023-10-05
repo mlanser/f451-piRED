@@ -21,7 +21,7 @@ import asyncio
 import signal
 
 from collections import deque
-from random import randrange, randint
+from random import randint
 from pathlib import Path
 
 from Adafruit_IO import Client, MQTTClient, RequestError, ThrottlingError
@@ -101,7 +101,7 @@ class Device:
             self.logger.addHandler(fileHandler)
 
         streamHandler = logging.StreamHandler()
-        streamHandler.setLevel(logging.ERROR)
+        streamHandler.setLevel(logLvl if logLvl == const.LOG_DEBUG else logging.ERROR)
         streamHandler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s: %(message)s"))
         self.logger.addHandler(streamHandler)
 
@@ -150,13 +150,14 @@ class Device:
             self.displMode = const.DISPL_BLANK
             self.sleepCounter = 1 
 
-    def get_feed_info(self, feed):
+    def get_feed_info(self, feedKwd, default=""):
         """Get Adafruit IO feed info
 
         Args:
-            feed:
-                'str' with feed (key) name    
+            feedKwd:
+                'str' with feed keyword to find in config/settings
         """
+        feed = get_setting(self.config, feedKwd, default)
         try:
             info = self.aio.feeds(feed)
 
@@ -407,13 +408,13 @@ def get_setting(settings, key, default=None):
     return settings[key] if key in settings else default
 
 
-async def send_all_sensor_data(dev, tempsData, pressData, humidData):
+async def send_all_sensor_data(client, tempsData, pressData, humidData):
     """
     Send sensor data to Adafruit IO
 
     Args:
-        ioClient:
-            Adafruit IO client instance
+        client:
+            We need full app context client
         tempsData:
             'dict' with 'temperature feed' key and temperature data point
         pressData:
@@ -428,37 +429,10 @@ async def send_all_sensor_data(dev, tempsData, pressData, humidData):
             When exceeding Adafruit IO rate limit
     """
     await asyncio.gather(
-        dev.send_sensor_data(tempsData),
-        dev.send_sensor_data(pressData),
-        dev.send_sensor_data(humidData)
+        client.send_sensor_data(tempsData),
+        client.send_sensor_data(pressData),
+        client.send_sensor_data(humidData)
     )
-
-
-# def sync_all_feeds(ioClient, cntr, maxCntr, tempsData, pressData, humidData):
-#     try:
-#         asyncio.run(send_all_sensor_data(
-#             aio,
-#             {"data": tempC, "feed": tempsFeed},
-#             {"data": press, "feed": pressFeed},
-#             {"data": humid, "feed": humidFeed},
-#         ))
-
-#     except RequestError as e:
-#         logger.error(f"Application terminated due to REQUEST ERROR: {e}")
-#         raise
-
-#     except ThrottlingError as e:
-#         # Keep increasing 'maxDelay' each time we get a 'ThrottlingError'
-#         maxDelay += ioThrottle
-        
-#     else:
-#         # Reset 'maxDelay' back to normal 'ioDelay' on successful upload
-#         maxDelay = ioDelay
-#         logger.info(f"Uploaded: TEMP: {tempC} - PRESS: {press} - HUMID: {humid}")
-
-#     finally:
-#         # Reset counter even on failure
-#         delayCounter = 1
 
 
 # =========================================================
@@ -486,7 +460,7 @@ if __name__ == '__main__':
     ioWait = get_setting(config, const.KWD_WAIT, const.DEF_WAIT)
     ioThrottle = get_setting(config, const.KWD_THROTTLE, const.DEF_THROTTLE)
     
-    # Initialize device instance
+    # Initialize app context instance
     piRED = Device(
         SenseHat(), 
         Client(ioUser, ioKey), 
@@ -517,10 +491,9 @@ if __name__ == '__main__':
     piRED.init_SenseHat()
 
     try:
-        tempsFeed = piRED.get_feed_info(get_setting(config, const.KWD_FEED_TEMPS, ""))
-        pressFeed = piRED.get_feed_info(get_setting(config, const.KWD_FEED_PRESS, ""))
-        humidFeed = piRED.get_feed_info(get_setting(config, const.KWD_FEED_HUMID, ""))
-        onOffFeed = piRED.get_feed_info(get_setting(config, const.KWD_FEED_ON_OFF, ""))
+        tempsFeed = piRED.get_feed_info(const.KWD_FEED_TEMPS)
+        pressFeed = piRED.get_feed_info(const.KWD_FEED_PRESS)
+        humidFeed = piRED.get_feed_info(const.KWD_FEED_HUMID)
 
     except RequestError as e:
         piRED.log(logging.ERROR, (f"Application terminated due to REQUEST ERROR: {e}"))
