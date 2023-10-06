@@ -14,7 +14,7 @@ from random import randint
 from Adafruit_IO import Client, RequestError, ThrottlingError
 
 import constants as const
-from helpers import convert_to_bool, convert_to_rgb, get_setting, num_to_range
+from common import convert_to_bool, convert_to_rgb, get_setting, num_to_range
 
 try:
     import tomllib
@@ -101,7 +101,6 @@ class Device:
 
         self.sense = sense
 
-
     def _pushed_up(self, event):
         """SenseHat Joystick UP event
         
@@ -147,7 +146,7 @@ class Device:
             self.displMode = const.DISPL_BLANK
             self.sleepCounter = 1 
 
-    def _get_config(self, key, default=None):
+    def get_config(self, key, default=None):
         """Get a config value from settings
         
         This method rerieves value from settings (TOML), but can

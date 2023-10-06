@@ -17,7 +17,6 @@ the 'enviromon.out' file.
 
 import time
 import sys
-import logging
 import asyncio
 import signal
 
@@ -29,7 +28,7 @@ from Adafruit_IO import RequestError, ThrottlingError
 
 import constants as const
 from pired import Device
-from helpers import exit_now, get_setting, num_to_range, convert_to_rgb, convert_to_bool, EXIT_NOW
+from common import exit_now, EXIT_NOW
 
 try:
     import tomllib
@@ -97,13 +96,6 @@ if __name__ == '__main__':
     except tomllib.TOMLDecodeError:
         sys.exit("Invalid 'settings.toml' file")      
 
-    # Get core settings
-    # ioUser = get_setting(config, const.KWD_AIO_USER, "")
-    # ioKey = get_setting(config, const.KWD_AIO_KEY, "")
-    ioDelay = get_setting(config, const.KWD_DELAY, const.DEF_DELAY)
-    ioWait = get_setting(config, const.KWD_WAIT, const.DEF_WAIT)
-    ioThrottle = get_setting(config, const.KWD_THROTTLE, const.DEF_THROTTLE)
-    
     # Initialize core data queues
     tempsQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Temperature queue
     pressQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Pressure queue
@@ -124,10 +116,25 @@ if __name__ == '__main__':
         sys.exit(1)
 
     # -- Main application loop --
+    # Get core settings
+    ioDelay = piRED.get_config(const.KWD_DELAY, const.DEF_DELAY)
+    ioWait = piRED.get_config(const.KWD_WAIT, const.DEF_WAIT)
+    ioThrottle = piRED.get_config(const.KWD_THROTTLE, const.DEF_THROTTLE)
+    
     delayCounter = maxDelay = ioDelay       # Ensure that we upload first reading
     piRED.sleepCounter = piRED.displSleep   # Reset counter for screen blanking
-    piRED.log(logging.INFO, "-- START Data Logging --")
 
+    piRED.log_info("-- Config Settings --")
+    piRED.log_info(f"DISPL ROT:   {piRED.displRotation}")
+    piRED.log_info(f"DISPL MODE:  {piRED.displMode}")
+    piRED.log_info(f"DISPL PROGR: {piRED.displProgress}")
+    piRED.log_info(f"DISPL SLEEP: {piRED.displSleep}")
+    piRED.log_info(f"SLEEP CNTR:  {piRED.sleepCounter}")
+    piRED.log_info(f"IO DEL:      {ioDelay}")
+    piRED.log_info(f"IO WAIT:     {ioWait}")
+    piRED.log_info(f"IO THROTTLE: {ioThrottle}")
+
+    piRED.log_info("-- START Data Logging --")
     while not EXIT_NOW:
         # We check the sensors each time we loop through ...
         tempC, press, humid = piRED.get_sensor_data()
@@ -172,7 +179,7 @@ if __name__ == '__main__':
                 ))
 
             except RequestError as e:
-                piRED.log(logging.ERROR, f"Application terminated due to REQUEST ERROR: {e}")
+                piRED.log_error(f"Application terminated due to REQUEST ERROR: {e}")
                 raise
 
             except ThrottlingError as e:
@@ -182,7 +189,7 @@ if __name__ == '__main__':
             else:
                 # Reset 'maxDelay' back to normal 'ioDelay' on successful upload
                 maxDelay = ioDelay
-                piRED.log(logging.INFO, f"Uploaded: TEMP: {tempC} - PRESS: {press} - HUMID: {humid}")
+                piRED.log_info(f"Uploaded: TEMP: {tempC} - PRESS: {press} - HUMID: {humid}")
 
             finally:
                 # Reset counter even on failure
@@ -192,5 +199,5 @@ if __name__ == '__main__':
         time.sleep(ioWait)
 
     # A bit of clean-up before we exit
-    piRED.log(logging.INFO, "-- END Data Logging --")
+    piRED.log_info("-- END Data Logging --")
     piRED.reset_LED()
