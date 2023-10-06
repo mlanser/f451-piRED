@@ -1,17 +1,10 @@
-#!/usr/bin/env python3
-"""f451 Labs piRED application.
+"""f451 Labs piRED Device Class.
 
-This application is designed for the f451 Labs piRED device which is also equipped with 
-a SenseHat add-on. The object is to continously read environment data (e.g. temperature, 
-barometric pressure, and humidity from the SenseHat sensors and then upload the data to 
-the Adafruit IO service.
+The piRED Device class includes support for hardware extensions (e.g. Sense Hat, etc.),
+core services (e.g. Adafruit IO, etc.), and uitilities (e.g. logger, etc.).
 
-To launch this application from terminal:
-
-    $ nohup python -u pired.py > pired.out &
-
-This will start the application in the background and it will keep running even after 
-terminal window is closed. Any output will be redirected to the 'pired.out' file.    
+The class wraps -- and extends as needed -- the methods and functions supported by 
+underlying libraries, and also keeps track of core counters, flags, etc.
 """
 
 import time
@@ -27,6 +20,7 @@ from pathlib import Path
 from Adafruit_IO import Client, MQTTClient, RequestError, ThrottlingError
 
 import constants as const
+from helpers import convert_to_bool, convert_to_rgb, num_to_range, exit_now, EXIT_NOW
 
 try:
     import tomllib
@@ -180,9 +174,28 @@ class Device:
 
         return tempC, press, humid 
 
+    def get_setting(settings, key, default=None):
+        """Get a config value from settings
+        
+        This function will use the value from settings (TOML), but 
+        can use a default value if settings value is not provided.
+
+        Args:
+            settings:
+                'dict' with settings values
+            key:
+                'str' with name of settings key
+            defaul:
+                Default value
+
+        Returns:
+            Settings value        
+        """
+        return settings[key] if key in settings else default
+
     def log(self, lvl, msg):
-        """Wrapper of Logger.log()"""
-        self.logger.log(lvl, msg)
+            """Wrapper of Logger.log()"""
+            self.logger.log(lvl, msg)
 
     def blank_LED(self):
         """Show clear/blank LED"""
@@ -268,14 +281,11 @@ class Device:
             raise ThrottlingError
 
 
-EPSILON = sys.float_info.epsilon    # Smallest possible difference.
-EXIT_NOW = False                    # Global flag for immediate (graceful) exit
-
 #         - 0    1    2    3    4    5    6    7 -
 EMPTY_Q = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 COLORS  = [const.RGB_BLUE, const.RGB_GREEN, const.RGB_YELLOW, const.RGB_RED]
 
-LOGLVL = "INFO"
+LOGLVL = "ERROR"
 LOGFILE = "f451-piRED.log"
 LOGNAME = "f451-piRED"
 
@@ -283,111 +293,6 @@ LOGNAME = "f451-piRED"
 # =========================================================
 #              H E L P E R   F U N C T I O N S
 # =========================================================
-def exit_now(self, *args):
-    """Changes global 'EXIT_NOW' flag.
-    
-    This function is called/triggered by signals (e.g. SIGINT, SIGTERM, etc.)
-    and allows us run some clean-up tasks before shutting down.
-    
-    NOTE: It's not possible to catch SIGKILL
-    
-    Based on code from: https://stackoverflow.com/questions/18499497/how-to-process-sigterm-signal-gracefully/31464349#31464349
-    """
-    global EXIT_NOW
-    EXIT_NOW = True
-
-
-def num_to_range(num, inMin, inMax, outMin, outMax):
-    """Map value to range
-
-    We use this function to map values (e.g. temp, etc.) against the Y-axis of 
-    the SenseHat 8x8 LED display. This means that all values must be mapped 
-    against a range of 0-7.
-
-    Based on code found here: https://www.30secondsofcode.org/python/s/num-to-range/
-
-    Args:
-        num:
-            Number to map against range
-        inMin:
-            Min value of range for numbers to be converted
-        inMax:
-            Max value of range for numbers to be converted
-        outMin:
-            Min value of target range
-        outMax:
-            Max value of target range
-
-    Returns:
-        'float'
-    """
-    return outMin + (float(num - inMin) / float(inMax - inMin) * (outMax - outMin))
-
-
-def convert_to_rgb(num, inMin, inMax, colors):
-    """
-    Map a value to RGB
-
-    Based on reply found on StackOverflow by `martineau`: 
-
-    See: https://stackoverflow.com/questions/20792445/calculate-rgb-value-for-a-range-of-values-to-create-heat-map
-
-    Args:
-        num:
-            Number to convert/map to RGB
-        inMin:
-            Min value of range for numbers to be converted
-        inMax:
-            Max value of range for numbers to be converted
-        colors:
-            series of RGB colors delineating a series of adjacent 
-            linear color gradients.
-
-    Returns:
-        'tuple' with RGB value
-    """
-
-    # Determine where the given value falls proportionality within
-    # the range from inMin->inMax and scale that fractional value
-    # by the total number in the `colors` palette.
-    i_f = float(num - inMin) / float(inMax - inMin) * (len(colors) - 1)
-
-    # Determine the lower index of the pair of color indices this
-    # value corresponds and its fractional distance between the lower
-    # and the upper colors.
-    i, f = int(i_f // 1), i_f % 1  # Split into whole & fractional parts.
-
-    # Does it fall exactly on one of the color points?
-    if f < EPSILON:
-        return colors[i]
-    # ... if not, then return a color linearly interpolated in the 
-    # range between it and the following one.
-    else:
-        (r1, g1, b1), (r2, g2, b2) = colors[i], colors[i+1]
-        return int(r1 + f * (r2 - r1)), int(g1 + f * (g2 - g1)), int(b1 + f * (b2 - b1))
-
-
-def convert_to_bool(inVal):
-    """Convert value to boolean.
-
-    If value is a string, then we check against predefined string 
-    constants. If value is an integer, then we return 'True' if value
-    is greater than 0 (zero).
-
-    For anything else we return a 'False'. 
-
-    Args:
-        inVal:
-            Value to be converted to boolean.
-    """
-    if isinstance(inVal, int) or isinstance(inVal, float):
-        return (abs(int(inVal)) > 0)
-    elif isinstance(inVal, str):
-        return (inVal.lower() in [const.STATUS_ON, const.STATUS_TRUE, const.STATUS_YES])
-    else:
-        return False
-
-
 def get_setting(settings, key, default=None):
     """Get a config value from settings
     
@@ -406,168 +311,3 @@ def get_setting(settings, key, default=None):
         Settings value        
     """
     return settings[key] if key in settings else default
-
-
-async def send_all_sensor_data(client, tempsData, pressData, humidData):
-    """
-    Send sensor data to Adafruit IO
-
-    Args:
-        client:
-            We need full app context client
-        tempsData:
-            'dict' with 'temperature feed' key and temperature data point
-        pressData:
-            'dict' with 'pressure feed' key and pressure data point
-        humidData:
-            'dict' with 'humidity feed' key and humidity data point
-
-    Raises:
-        RequestError:
-            When API request fails
-        ThrottlingError:
-            When exceeding Adafruit IO rate limit
-    """
-    await asyncio.gather(
-        client.send_sensor_data(tempsData),
-        client.send_sensor_data(pressData),
-        client.send_sensor_data(humidData)
-    )
-
-
-# =========================================================
-#      M A I N   F U N C T I O N    /   A C T I O N S
-# =========================================================
-if __name__ == '__main__':
-    # Init signals
-    signal.signal(signal.SIGINT, exit_now)
-    signal.signal(signal.SIGTERM, exit_now)
-
-    # Get app dir
-    appDir = Path(__file__).parent
-
-    # Initialize TOML parser and load 'settings.toml' file
-    try:
-        with open(appDir.joinpath("settings.toml"), mode="rb") as fp:
-            config = tomllib.load(fp)
-    except tomllib.TOMLDecodeError:
-        sys.exit("Invalid 'settings.toml' file")      
-
-    # Get core settings
-    ioUser = get_setting(config, const.KWD_AIO_USER, "")
-    ioKey = get_setting(config, const.KWD_AIO_KEY, "")
-    ioDelay = get_setting(config, const.KWD_DELAY, const.DEF_DELAY)
-    ioWait = get_setting(config, const.KWD_WAIT, const.DEF_WAIT)
-    ioThrottle = get_setting(config, const.KWD_THROTTLE, const.DEF_THROTTLE)
-    
-    # Initialize app context instance
-    piRED = Device(
-        SenseHat(), 
-        Client(ioUser, ioKey), 
-        logging.getLogger("f451-piRED"),
-        config
-    )
-
-    piRED.displRotation = get_setting(config, const.KWD_ROTATION, const.DEF_ROTATION)
-    piRED.displMode = get_setting(config, const.KWD_DISPLAY, const.DISPL_SPARKLE)
-    piRED.displProgress = convert_to_bool(get_setting(config, const.KWD_PROGRESS, const.STATUS_ON))
-    piRED.displSleep = get_setting(config, const.KWD_SLEEP, const.DEF_SLEEP)
-
-    # Initialize logger
-    logFile = get_setting(config, const.KWD_LOG_FILE)
-    logFileFP = appDir.parent.joinpath(logFile) if logFile else None
-
-    piRED.init_logger(
-        get_setting(config, const.KWD_LOG_LEVEL, const.LOG_INFO),
-        logFileFP
-    )
-
-    # Initialize core data queues
-    tempsQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Temperature queue
-    pressQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Pressure queue
-    humidQ = deque(EMPTY_Q, maxlen=const.LED_MAX_COL) # Humidity queue
-
-    # Initialize SenseHat and Adafruit IO clients
-    piRED.init_SenseHat()
-
-    try:
-        tempsFeed = piRED.get_feed_info(const.KWD_FEED_TEMPS)
-        pressFeed = piRED.get_feed_info(const.KWD_FEED_PRESS)
-        humidFeed = piRED.get_feed_info(const.KWD_FEED_HUMID)
-
-    except RequestError as e:
-        piRED.log(logging.ERROR, (f"Application terminated due to REQUEST ERROR: {e}"))
-        piRED.reset_LED()
-        sys.exit(1)
-
-    # -- Main application loop --
-    delayCounter = maxDelay = ioDelay       # Ensure that we upload first reading
-    piRED.sleepCounter = piRED.displSleep   # Reset counter for screen blanking
-    piRED.log(logging.INFO, "-- START Data Logging --")
-
-    while not EXIT_NOW:
-        # We check the sensors each time we loop through ...
-        tempC, press, humid = piRED.get_sensor_data()
-
-        # ... and add the data to the queues
-        tempsQ.append(tempC)
-        pressQ.append(press)
-        humidQ.append(humid)
-
-        # Check 'sleepCounter' before we display anything
-        if piRED.sleepCounter == 1:
-            piRED.blank_LED()       # Need to blank screen once
-        elif piRED.sleepCounter > 1:
-            if piRED.displMode == const.DISPL_TEMP:
-                piRED.update_LED(tempsQ, const.MIN_TEMP, const.MAX_TEMP)
-            elif piRED.displMode == const.DISPL_PRESS:    
-                piRED.update_LED(pressQ, const.MIN_PRESS, const.MAX_PRESS)
-            elif piRED.displMode == const.DISPL_HUMID:    
-                piRED.update_LED(humidQ, const.MIN_HUMID, const.MAX_HUMID)
-            elif piRED.displMode == const.DISPL_SPARKLE:    
-                piRED.sparkle_LED()
-            else:    
-                piRED.blank_LED()
-
-            if piRED.displProgress:
-                piRED.update_LED_progress(delayCounter, maxDelay)    
-
-        # Update sleep counter for screen blanking as needed
-        if piRED.sleepCounter > 0:    
-            piRED.sleepCounter -= 1
-
-        # Is it time to upload data?
-        if delayCounter < maxDelay:
-            delayCounter += 1       # We send data at set intervals
-        else:
-            try:
-                asyncio.run(send_all_sensor_data(
-                    piRED,
-                    {"data": tempC, "feed": tempsFeed},
-                    {"data": press, "feed": pressFeed},
-                    {"data": humid, "feed": humidFeed},
-                ))
-
-            except RequestError as e:
-                piRED.log(logging.ERROR, f"Application terminated due to REQUEST ERROR: {e}")
-                raise
-
-            except ThrottlingError as e:
-                # Keep increasing 'maxDelay' each time we get a 'ThrottlingError'
-                maxDelay += ioThrottle
-                
-            else:
-                # Reset 'maxDelay' back to normal 'ioDelay' on successful upload
-                maxDelay = ioDelay
-                piRED.log(logging.INFO, f"Uploaded: TEMP: {tempC} - PRESS: {press} - HUMID: {humid}")
-
-            finally:
-                # Reset counter even on failure
-                delayCounter = 1
-
-        # Let's rest a bit before we go through the loop again
-        time.sleep(ioWait)
-
-    # A bit of clean-up before we exit
-    piRED.log(logging.INFO, "-- END Data Logging --")
-    piRED.reset_LED()
