@@ -99,7 +99,7 @@ class Device:
         sense.stick.direction_right = self._pushed_right
         sense.stick.direction_middle = self._pushed_middle
 
-        self.sense = sense
+        return sense
 
     def _pushed_up(self, event):
         """SenseHat Joystick UP event
@@ -205,6 +205,10 @@ class Device:
     def log_info(self, msg):
             """Wrapper of Logger.info()"""
             self.logger.info(msg)
+
+    def log_debug(self, msg):
+            """Wrapper of Logger.debug()"""
+            self.logger.debug(msg)
 
     def blank_LED(self):
         """Show clear/blank LED"""

@@ -47,6 +47,17 @@ LOGLVL = "ERROR"
 LOGFILE = "f451-piRED.log"
 LOGNAME = "f451-piRED"
 
+def debug_config_info(dev):
+    dev.log_debug("-- Config Settings --")
+    dev.log_debug(f"DISPL ROT:   {dev.displRotation}")
+    dev.log_debug(f"DISPL MODE:  {dev.displMode}")
+    dev.log_debug(f"DISPL PROGR: {dev.displProgress}")
+    dev.log_debug(f"DISPL SLEEP: {dev.displSleep}")
+    dev.log_debug(f"SLEEP CNTR:  {dev.sleepCounter}")
+    dev.log_debug(f"IO DEL:      {dev.get_config(const.KWD_DELAY, const.DEF_DELAY)}")
+    dev.log_debug(f"IO WAIT:     {dev.get_config(const.KWD_WAIT, const.DEF_WAIT)}")
+    dev.log_debug(f"IO THROTTLE: {dev.get_config(const.KWD_THROTTLE, const.DEF_THROTTLE)}")
+
 
 # =========================================================
 #              H E L P E R   F U N C T I O N S
@@ -124,16 +135,7 @@ if __name__ == '__main__':
     delayCounter = maxDelay = ioDelay       # Ensure that we upload first reading
     piRED.sleepCounter = piRED.displSleep   # Reset counter for screen blanking
 
-    piRED.log_info("-- Config Settings --")
-    piRED.log_info(f"DISPL ROT:   {piRED.displRotation}")
-    piRED.log_info(f"DISPL MODE:  {piRED.displMode}")
-    piRED.log_info(f"DISPL PROGR: {piRED.displProgress}")
-    piRED.log_info(f"DISPL SLEEP: {piRED.displSleep}")
-    piRED.log_info(f"SLEEP CNTR:  {piRED.sleepCounter}")
-    piRED.log_info(f"IO DEL:      {ioDelay}")
-    piRED.log_info(f"IO WAIT:     {ioWait}")
-    piRED.log_info(f"IO THROTTLE: {ioThrottle}")
-
+    debug_config_info(piRED)
     piRED.log_info("-- START Data Logging --")
     while not EXIT_NOW:
         # We check the sensors each time we loop through ...
