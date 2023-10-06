@@ -1,7 +1,7 @@
 """Helper Module for applications on the f451 Labs piRED device.
 
-This module holds a few common helper functions that can be used across most/all 
-applications designed for the f451 Labs piRED device.
+This module holds a few common helper functions that can be used across 
+most/all applications designed for the f451 Labs piRED device.
 """
 
 import sys
