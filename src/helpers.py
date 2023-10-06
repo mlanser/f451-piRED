@@ -27,6 +27,27 @@ def exit_now(self, *args):
     EXIT_NOW = True
 
 
+def get_setting(settings, key, default=None):
+    """Get a config value from settings
+    
+    This function rerieves value from settings (TOML), but can
+    return a default value if key does not exist (i.e. settings 
+    value has not been defined in TOML file.
+
+    Args:
+        settings:
+            'dict' with settings values
+        key:
+            'str' with name of settings key
+        defaul:
+            Default value
+
+    Returns:
+        Settings value        
+    """
+    return settings[key] if key in settings else default
+
+
 def num_to_range(num, inMin, inMax, outMin, outMax):
     """Map value to range
 
@@ -118,23 +139,3 @@ def convert_to_bool(inVal):
         return (inVal.lower() in [const.STATUS_ON, const.STATUS_TRUE, const.STATUS_YES])
     else:
         return False
-
-
-def get_setting(settings, key, default=None):
-    """Get a config value from settings
-    
-    This function will use the value from settings (TOML), but 
-    can use a default value if settings value is not provided.
-
-    Args:
-        settings:
-            'dict' with settings values
-        key:
-            'str' with name of settings key
-        defaul:
-            Default value
-
-    Returns:
-        Settings value        
-    """
-    return settings[key] if key in settings else default

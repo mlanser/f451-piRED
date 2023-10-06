@@ -7,20 +7,14 @@ The class wraps -- and extends as needed -- the methods and functions supported 
 underlying libraries, and also keeps track of core counters, flags, etc.
 """
 
-import time
-import sys
 import logging
-import asyncio
-import signal
 
-from collections import deque
 from random import randint
-from pathlib import Path
 
-from Adafruit_IO import Client, MQTTClient, RequestError, ThrottlingError
+from Adafruit_IO import Client, RequestError, ThrottlingError
 
 import constants as const
-from helpers import convert_to_bool, convert_to_rgb, num_to_range, exit_now, EXIT_NOW
+from helpers import convert_to_bool, convert_to_rgb, get_setting, num_to_range
 
 try:
     import tomllib
@@ -37,67 +31,76 @@ except ImportError:
 #          G L O B A L S   A N D   H E L P E R S
 # =========================================================
 class Device:
-    def __init__(self, sense, aio, logger, config):
-        self.sense = sense
-        self.aio = aio
-        self.logger = logger
+    def __init__(self, config, appDir):
+        """Initialize SenseHat hardware and logger
+
+        Args:
+            config:
+                Config values from 'settings.toml'
+            appDir:
+                Path object for app parent folder
+        """
         self.config = config
-        self.displRotation = 0
-        self.displSleep = 0
-        self.displMode = 0
-        self.displProgress = False
-        self.sleepCounter = 0
-        # self.ioDelay = 0
-        # self.delayCounter = 0
-        # self.maxDelay = 0
+        self.aio = Client(                                  # Adafruit Client
+            get_setting(config, const.KWD_AIO_USER, ""), 
+            get_setting(config, const.KWD_AIO_KEY, "")
+        )
+        self.logger = self._init_logger(config, appDir)     # Logger
+        self.sense = self._init_SenseHat(config)            # SenseHat
 
-    def init_SenseHat(self):
-        """Initialize SenseHat
-        
-        Initialize the SenseHat device, set some default 
-        parameters, and clear LED.
+        self.displRotation = get_setting(config, const.KWD_ROTATION, const.DEF_ROTATION)
+        self.displMode = get_setting(config, const.KWD_DISPLAY, const.DISPL_SPARKLE)
+        self.displProgress = convert_to_bool(get_setting(config, const.KWD_PROGRESS, const.STATUS_ON))
+        self.displSleep = get_setting(config, const.KWD_SLEEP, const.DEF_SLEEP)
 
-        Args:
-            defRotation:
-                Default rotation
+    def _init_logger(self, config, appDir):
+        """Initialize Logger
+
+        We always initialize the logger with a stream 
+        handler. But file handler is only created if 
+        a file name has been provided in settings.
         """
-        self.sense.clear()                               # Clear 8x8 LED
-        self.sense.low_light = True
+        logger = logging.getLogger("f451-piRED")
+        logFile = get_setting(config, const.KWD_LOG_FILE)
+        logFileFP = appDir.parent.joinpath(logFile) if logFile else None
+        logLvl = get_setting(config, const.KWD_LOG_LEVEL, const.LOG_INFO)
 
-        self.sense.set_rotation(self.displRotation)      # Set initial rotation
-        self.sense.set_imu_config(False, False, False)   # Disable IMU functions
+        logger.setLevel(logLvl)
 
-        self.sense.stick.direction_up = self._pushed_up
-        self.sense.stick.direction_down = self._pushed_down
-        self.sense.stick.direction_left = self._pushed_left
-        self.sense.stick.direction_right = self._pushed_right
-        self.sense.stick.direction_middle = self._pushed_middle
-
-    def init_logger(self, logLvl, logFile=None):
-        """Initialize logger
-        
-        This method will always initialize the logger with a stream 
-        handler. But file handler will only be created if a file
-        name has been provided.
-
-        Args:
-            logLvl:
-                Log level used for handlers
-            logFile:
-                Path object for log file
-        """
-        self.logger.setLevel(logLvl)
-
-        if logFile:
-            fileHandler = logging.FileHandler(logFile)
+        if logFileFP:
+            fileHandler = logging.FileHandler(logFileFP)
             fileHandler.setLevel(logLvl)
             fileHandler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s: %(message)s"))
-            self.logger.addHandler(fileHandler)
+            logger.addHandler(fileHandler)
 
         streamHandler = logging.StreamHandler()
         streamHandler.setLevel(logLvl if logLvl == const.LOG_DEBUG else logging.ERROR)
         streamHandler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s: %(message)s"))
-        self.logger.addHandler(streamHandler)
+        logger.addHandler(streamHandler)
+
+        return logger
+
+    def _init_SenseHat(self, config):
+        """Initialize SenseHat
+
+        Initialize the SenseHat device, set some 
+        default parameters, and clear LED.
+        """
+        sense = SenseHat()
+        
+        sense.set_imu_config(False, False, False)   # Disable IMU functions
+        sense.low_light = True
+        sense.clear()                               # Clear 8x8 LED
+        sense.set_rotation(get_setting(config, const.KWD_ROTATION, const.DEF_ROTATION)) # Set initial rotation
+
+        sense.stick.direction_up = self._pushed_up
+        sense.stick.direction_down = self._pushed_down
+        sense.stick.direction_left = self._pushed_left
+        sense.stick.direction_right = self._pushed_right
+        sense.stick.direction_middle = self._pushed_middle
+
+        self.sense = sense
+
 
     def _pushed_up(self, event):
         """SenseHat Joystick UP event
@@ -144,6 +147,24 @@ class Device:
             self.displMode = const.DISPL_BLANK
             self.sleepCounter = 1 
 
+    def _get_config(self, key, default=None):
+        """Get a config value from settings
+        
+        This method rerieves value from settings (TOML), but can
+        return a default value if key does not exist (i.e. settings 
+        value has not been defined in TOML file.
+
+        Args:
+            key:
+                'str' with name of settings key
+            defaul:
+                Default value
+
+        Returns:
+            Settings value        
+        """
+        return self.config[key] if key in self.config else default
+
     def get_feed_info(self, feedKwd, default=""):
         """Get Adafruit IO feed info
 
@@ -174,28 +195,17 @@ class Device:
 
         return tempC, press, humid 
 
-    def get_setting(settings, key, default=None):
-        """Get a config value from settings
-        
-        This function will use the value from settings (TOML), but 
-        can use a default value if settings value is not provided.
-
-        Args:
-            settings:
-                'dict' with settings values
-            key:
-                'str' with name of settings key
-            defaul:
-                Default value
-
-        Returns:
-            Settings value        
-        """
-        return settings[key] if key in settings else default
-
     def log(self, lvl, msg):
             """Wrapper of Logger.log()"""
             self.logger.log(lvl, msg)
+
+    def log_error(self, msg):
+            """Wrapper of Logger.error()"""
+            self.logger.error(msg)
+
+    def log_info(self, msg):
+            """Wrapper of Logger.info()"""
+            self.logger.info(msg)
 
     def blank_LED(self):
         """Show clear/blank LED"""
@@ -279,35 +289,3 @@ class Device:
         except ThrottlingError as e:
             self.logger.log(logging.ERROR, f"Upload failed for {data['feed'].key} - THROTTLING ERROR: {e}")
             raise ThrottlingError
-
-
-#         - 0    1    2    3    4    5    6    7 -
-EMPTY_Q = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-COLORS  = [const.RGB_BLUE, const.RGB_GREEN, const.RGB_YELLOW, const.RGB_RED]
-
-LOGLVL = "ERROR"
-LOGFILE = "f451-piRED.log"
-LOGNAME = "f451-piRED"
-
-
-# =========================================================
-#              H E L P E R   F U N C T I O N S
-# =========================================================
-def get_setting(settings, key, default=None):
-    """Get a config value from settings
-    
-    This function will use the value from settings (TOML), but 
-    can use a default value if settings value is not provided.
-
-    Args:
-        settings:
-            'dict' with settings values
-        key:
-            'str' with name of settings key
-        defaul:
-            Default value
-
-    Returns:
-        Settings value        
-    """
-    return settings[key] if key in settings else default
