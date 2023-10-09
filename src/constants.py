@@ -26,6 +26,8 @@ DISPL_SPARKLE = 1       # Show random sparkles
 DISPL_TEMP = 2          # Show temperature data
 DISPL_PRESS = 3         # Show barometric pressure data
 DISPL_HUMID = 4         # Show humidity data
+MIN_DISPL = DISPL_SPARKLE
+MAX_DISPL = DISPL_HUMID
 
 # -- SenseHat --
 MIN_TEMP = 0.0          # Min/max sense degrees in C
