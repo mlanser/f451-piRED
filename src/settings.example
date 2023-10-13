@@ -7,6 +7,8 @@ FEED_TEMPS = "<ADAFRUIT IO FEED KEY FOR TEMPERATURE DATA>"
 FEED_PRESS = "<ADAFRUIT IO FEED KEY FOR PRESSURE DATA>"
 FEED_HUMID = "<ADAFRUIT IO FEED KEY FOR HUMIDITY DATA>"
 
+UNIT_TEMPS = "C"    # Temperature unit to use for uploads - [C, K, F] 
+
 # -- Misc. Application Defaults --
 ROTATION = 0    # Default rotation for Sense Hat 8x8 LED - [0, 90, 180, 270]
 DISPLAY = 4     # Default display [1, 2, 3, 4]

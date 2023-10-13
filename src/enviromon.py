@@ -123,7 +123,7 @@ if __name__ == '__main__':
 
     except RequestError as e:
         piRED.log_error(f"Application terminated due to REQUEST ERROR: {e}")
-        piRED.reset_LED()
+        piRED.display_reset()
         sys.exit(1)
 
     # -- Main application loop --
@@ -148,21 +148,21 @@ if __name__ == '__main__':
 
         # Check 'sleepCounter' before we display anything
         if piRED.sleepCounter == 1:
-            piRED.blank_LED()       # Need to blank screen once
+            piRED.display_blank()       # Need to blank screen once
         elif piRED.sleepCounter > 1:
             if piRED.displMode == const.DISPL_TEMP:
-                piRED.update_LED(tempsQ, const.MIN_TEMP, const.MAX_TEMP)
+                piRED.display_update(tempsQ, const.MIN_TEMP, const.MAX_TEMP)
             elif piRED.displMode == const.DISPL_PRESS:    
-                piRED.update_LED(pressQ, const.MIN_PRESS, const.MAX_PRESS)
+                piRED.display_update(pressQ, const.MIN_PRESS, const.MAX_PRESS)
             elif piRED.displMode == const.DISPL_HUMID:    
-                piRED.update_LED(humidQ, const.MIN_HUMID, const.MAX_HUMID)
+                piRED.display_update(humidQ, const.MIN_HUMID, const.MAX_HUMID)
             elif piRED.displMode == const.DISPL_SPARKLE:    
-                piRED.sparkle_LED()
+                piRED.display_sparkle()
             else:    
-                piRED.blank_LED()
+                piRED.display_blank()
 
             if piRED.displProgress:
-                piRED.update_LED_progress(delayCounter, maxDelay)    
+                piRED.display_progress(delayCounter, maxDelay)    
 
         # Update sleep counter for screen blanking as needed
         if piRED.sleepCounter > 0:    
@@ -202,4 +202,4 @@ if __name__ == '__main__':
 
     # A bit of clean-up before we exit
     piRED.log_info("-- END Data Logging --")
-    piRED.reset_LED()
+    piRED.display_reset()
