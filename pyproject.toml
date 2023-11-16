@@ -15,6 +15,7 @@ classifiers = [
 ]
 keywords = ["red", "f451"]
 dependencies = [
+    "f451-common",
     "f451-logger",
     "f451-uploader",
     "f451-sensehat",
@@ -36,7 +37,7 @@ dev = [
 Homepage = "https://github.com/mlanser/f451-pired"
 
 [project.scripts]
-enviromon = "f451_pired.enviromon:main"
+sensemon = "f451_pired.sensemon:main"
 
 [tool.bumpver]
 current_version = "0.0.1"

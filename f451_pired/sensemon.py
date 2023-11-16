@@ -40,14 +40,13 @@ from datetime import datetime
 from collections import deque
 
 from . import constants as const
-from .common import load_settings, get_RPI_serial_num, get_RPI_ID, check_wifi
 from .sense_data import SenseData
 
-from f451_logger.logger import Logger as f451Logger, KWD_LOG_LEVEL
-from f451_uploader.uploader import Uploader as f451Uploader
-from f451_sensehat.sensehat import SenseHat as f451SenseHat, SenseError as f451SenseError
-from f451_sensehat.sensehat import KWD_DISPLAY_MIN, KWD_DISPLAY_MAX
-from f451_sensehat.sensehat import KWD_BTN_UP, KWD_BTN_DWN, KWD_BTN_LFT, KWD_BTN_RHT, KWD_BTN_MDL, BTN_RELEASE
+import f451_common.common as f451Common
+import f451_logger.logger as f451Logger
+import f451_uploader.uploader as f451Uploader
+
+import f451_sensehat.sensehat as f451SenseHat
 
 from Adafruit_IO import RequestError, ThrottlingError
 
@@ -62,20 +61,20 @@ APP_SETTINGS = "settings.toml"          # Standard for all f451 Labs projects
 APP_DIR = Path(__file__).parent         # Find dir for this app
 
 APP_DISPLAY_MODES = {
-    KWD_DISPLAY_MIN: const.MAX_DISPL, 
-    KWD_DISPLAY_MAX: const.MIN_DISPL
+    f451SenseHat.KWD_DISPLAY_MIN: const.MAX_DISPL, 
+    f451SenseHat.KWD_DISPLAY_MAX: const.MIN_DISPL
 }
 
 # Load settings
-CONFIG = load_settings(APP_DIR.joinpath(APP_SETTINGS))
+CONFIG = f451Common.load_settings(APP_DIR.joinpath(APP_SETTINGS))
 
 # Initialize device instance which includes all sensors
 # and LED display on Sense HAT
-SENSE_HAT = f451SenseHat(CONFIG)
+SENSE_HAT = f451SenseHat.SenseHat(CONFIG)
 
 # Initialize logger and IO uploader
-LOGGER = f451Logger(CONFIG, LOGFILE=APP_LOG)
-UPLOADER = f451Uploader(CONFIG)
+LOGGER = f451Logger.Logger(CONFIG, LOGFILE=APP_LOG)
+UPLOADER = f451Uploader.Uploader(CONFIG)
 
 # Verify that feeds exist
 try:
@@ -113,8 +112,8 @@ def debug_config_info(cliArgs):
     LOGGER.log_debug(f"IO THROTTLE: {CONFIG.get(const.KWD_THROTTLE, const.DEF_THROTTLE)}")
 
     # Display Raspberry Pi serial and Wi-Fi status
-    LOGGER.log_debug(f"Raspberry Pi serial: {get_RPI_serial_num()}")
-    LOGGER.log_debug(f"Wi-Fi: {(const.STATUS_YES if check_wifi() else const.STATUS_UNKNOWN)}")
+    LOGGER.log_debug(f"Raspberry Pi serial: {f451Common.get_RPI_serial_num()}")
+    LOGGER.log_debug(f"Wi-Fi: {(f451Common.STATUS_YES if f451Common.check_wifi() else f451Common.STATUS_UNKNOWN)}")
 
     # Display CLI args
     LOGGER.log_debug(f"CLI Args:\n{cliArgs}")
@@ -219,7 +218,7 @@ async def upload_sensor_data(*args, **kwargs):
     if data.get(const.KWD_DATA_HUMID, None) is not None:
         sendQ.append(UPLOADER.aio_send_data(FEED_HUMID.key, data.get(const.KWD_DATA_HUMID)))
 
-    # deviceID = SENSE_HAT.get_ID(const.DEF_ID_PREFIX)
+    # deviceID = SENSE_HAT.get_ID(DEF_ID_PREFIX)
 
     await asyncio.gather(*sendQ)
 
@@ -231,7 +230,7 @@ def btn_up(event):
     """
     global displayUpdate
 
-    if event.action != BTN_RELEASE:
+    if event.action != f451SenseHat.BTN_RELEASE:
         SENSE_HAT.display_rotate(-1)
         displayUpdate = time.time()
 
@@ -243,7 +242,7 @@ def btn_down(event):
     """
     global displayUpdate
 
-    if event.action != BTN_RELEASE:
+    if event.action != f451SenseHat.BTN_RELEASE:
         SENSE_HAT.display_rotate(1)
         displayUpdate = time.time()
 
@@ -255,7 +254,7 @@ def btn_left(event):
     """
     global displayUpdate
 
-    if event.action != BTN_RELEASE:
+    if event.action != f451SenseHat.BTN_RELEASE:
         SENSE_HAT.update_display_mode(-1)
         displayUpdate = time.time()
 
@@ -267,7 +266,7 @@ def btn_right(event):
     """
     global displayUpdate
 
-    if event.action != BTN_RELEASE:
+    if event.action != f451SenseHat.BTN_RELEASE:
         SENSE_HAT.update_display_mode(1)
         displayUpdate = time.time()
 
@@ -279,7 +278,7 @@ def btn_middle(event):
     """
     global displayUpdate
 
-    if event.action != BTN_RELEASE:
+    if event.action != f451SenseHat.BTN_RELEASE:
         # Wake up?
         if SENSE_HAT.displSleepMode:
             SENSE_HAT.update_sleep_mode(False)
@@ -289,11 +288,11 @@ def btn_middle(event):
 
 
 APP_JOYSTICK_ACTIONS = {
-    KWD_BTN_UP: btn_up(),
-    KWD_BTN_DWN: btn_down(),
-    KWD_BTN_LFT: btn_left(),
-    KWD_BTN_RHT: btn_right(),
-    KWD_BTN_MDL: btn_middle(),
+    f451SenseHat.KWD_BTN_UP: btn_up,
+    f451SenseHat.KWD_BTN_DWN: btn_down,
+    f451SenseHat.KWD_BTN_LFT: btn_left,
+    f451SenseHat.KWD_BTN_RHT: btn_right,
+    f451SenseHat.KWD_BTN_MDL: btn_middle,
 }
 
 
@@ -336,8 +335,8 @@ def main(cliArgs=None):
         sys.exit(0)
 
     # Initialize Sense HAT joystick and LED display
-    SENSE_HAT.joystick_init(APP_JOYSTICK_ACTIONS)
-    SENSE_HAT.display_init(APP_DISPLAY_MODES)
+    SENSE_HAT.joystick_init(**APP_JOYSTICK_ACTIONS)
+    SENSE_HAT.display_init(**APP_DISPLAY_MODES)
     SENSE_HAT.update_sleep_mode(cliArgs.noDisplay)
 
     if cliArgs.progress:
@@ -352,18 +351,18 @@ def main(cliArgs=None):
     ioUploadAndExit = cliArgs.cron
 
     # Initialize core data queues
-    tempCompFactor = CONFIG.get(const.KWD_TEMP_COMP, const.DEF_TEMP_COMP_FACTOR)
-    cpuTempsQMaxLen = CONFIG.get(const.KWD_MAX_LEN_CPU_TEMPS, const.MAX_LEN_CPU_TEMPS)
+    tempCompFactor = CONFIG.get(f451Common.KWD_TEMP_COMP, f451Common.DEF_TEMP_COMP_FACTOR)
+    cpuTempsQMaxLen = CONFIG.get(f451Common.KWD_MAX_LEN_CPU_TEMPS, f451Common.MAX_LEN_CPU_TEMPS)
     cpuTempsQ = deque([SENSE_HAT.get_CPU_temp(False)] * cpuTempsQMaxLen, maxlen=cpuTempsQMaxLen)
 
     senseData = SenseData(1, SENSE_HAT.widthLED)
 
     # Update log file or level?
     if cliArgs.log is not None:
-        LOGGER.set_log_file(CONFIG.get(KWD_LOG_LEVEL, const.LOG_NOTSET), cliArgs.log)
+        LOGGER.set_log_file(CONFIG.get(f451Logger.KWD_LOG_LEVEL, f451Logger.LOG_NOTSET), cliArgs.log)
 
     if cliArgs.debug:
-        LOGGER.set_log_level(const.LOG_DEBUG)
+        LOGGER.set_log_level(f451Logger.LOG_DEBUG)
 
     # -- Main application loop --
     timeSinceUpdate = 0
@@ -411,7 +410,7 @@ def main(cliArgs=None):
                         temperature = round(tempComp, ioRounding), 
                         pressure = round(pressRaw, ioRounding), 
                         humidity = round(humidRaw, ioRounding), 
-                        deviceID = get_RPI_ID(const.DEF_ID_PREFIX)
+                        deviceID = f451Common.get_RPI_ID(f451Common.DEF_ID_PREFIX)
                     ))
 
                 except RequestError as e:
