@@ -30,13 +30,13 @@ It is recommended to copy the '*settings.example*' to '*settings.toml*' and then
 
 ### Misc. Application Defaults
 
-- **TODO - ROTATION**: 'int' - 0 | 90 | 180 | 270 degrees to turn 8x8 LED display
+- **ROTATION**: 'int' - 0 | 90 | 180 | 270 degrees to turn 8x8 LED display
     - 90 | 270 - *top of LED will point toward/away RPI HDMI*
     - 0 | 180 - *top of LED will point away/toward RPI USB*
 
-- **TODO - DISPLAY**: 'int' - 0..10
-    - 0..9 - *display modes with single data point (e.g. temperature, etc.) and scrolling line graph and color bars*
-    - 10 - *display mode showing all data ponits in all text in 2 columns*
+- **TODO - DISPLAY**: 'int' - 0..3
+    - 1..3 - *display modes with single data point (e.g. temperature, etc.) and scrolling bar graph*
+    - 0 - *display is 'sparkle' mode where data is collected and uploaded but not displayed*
 
 - **DELAY**: 'int' - delay in seconds between uploads to Adafruit IO.
     - Smaller number means more freq uploads and higher data rate
