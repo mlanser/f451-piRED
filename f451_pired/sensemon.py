@@ -28,6 +28,10 @@ NOTE: This code is based on the 'luftdaten_combined.py' example from the Enviro+
       
       We also support additional display modes including a screen-saver mode, support 
       for 'settings.toml', and more.
+
+Dependencies:
+    - adafruit-io - only install if you have physical Sense HAT
+    - speedtest-cli - (optional) only used for internet speed tests 
 """
 
 import argparse
@@ -183,8 +187,8 @@ def init_cli_parser():
 async def upload_sensor_data(*args, **kwargs):
     """Send sensor data to cloud services.
     
-    This help parses and send enviro data to Adafruit IO 
-    and Arduino Cloud.
+    This helper function parses and sends enviro data to 
+    Adafruit IO and/or Arduino Cloud.
 
     NOTE: This function will upload specific environment 
           data using the following keywords:
