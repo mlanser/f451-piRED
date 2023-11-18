@@ -40,13 +40,13 @@ from datetime import datetime
 from collections import deque
 
 from . import constants as const
-from .sense_data import SenseData
 
 import f451_common.common as f451Common
 import f451_logger.logger as f451Logger
 import f451_uploader.uploader as f451Uploader
 
 import f451_sensehat.sensehat as f451SenseHat
+import f451_sensehat.sensehat_data as f451SenseData
 
 from Adafruit_IO import RequestError, ThrottlingError
 
@@ -355,7 +355,7 @@ def main(cliArgs=None):
     cpuTempsQMaxLen = CONFIG.get(f451Common.KWD_MAX_LEN_CPU_TEMPS, f451Common.MAX_LEN_CPU_TEMPS)
     cpuTempsQ = deque([SENSE_HAT.get_CPU_temp(False)] * cpuTempsQMaxLen, maxlen=cpuTempsQMaxLen)
 
-    senseData = SenseData(1, SENSE_HAT.widthLED)
+    senseData = f451SenseData.SenseData(1, SENSE_HAT.widthLED)
 
     # Update log file or level?
     if cliArgs.log is not None:
