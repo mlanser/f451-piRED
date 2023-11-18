@@ -34,7 +34,7 @@ It is recommended to copy the '*settings.example*' to '*settings.toml*' and then
     - 90 | 270 - *top of LED will point toward/away RPI HDMI*
     - 0 | 180 - *top of LED will point away/toward RPI USB*
 
-- **TODO - DISPLAY**: 'int' - 0..3
+- **DISPLAY**: 'int' - 0..3
     - 1..3 - *display modes with single data point (e.g. temperature, etc.) and scrolling bar graph*
     - 0 - *display is 'sparkle' mode where data is collected and uploaded but not displayed*
 
