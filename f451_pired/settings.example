@@ -12,6 +12,9 @@ AIO_KEY = "<ADAFRUIT IO KEY>"
 FEED_TEMPS = "<ADAFRUIT IO FEED KEY FOR TEMPERATURE DATA>"
 FEED_PRESS = "<ADAFRUIT IO FEED KEY FOR PRESSURE DATA>"
 FEED_HUMID = "<ADAFRUIT IO FEED KEY FOR HUMIDITY DATA>"
+FEED_DWNLD = <ADAFRUIT IO FEED KEY FOR DOWNLOAD SPEED DATA>"
+FEED_UPLD = "<ADAFRUIT IO FEED KEY FOR UPLOAD SPEED DATA>"
+FEED_PING = "<ADAFRUIT IO FEED KEY FOR PING DATA>"
 
 # -- Arduino Cloud ----------------------------------------
 ARD_ID = "<ARDUINO CLOUD ID>"
@@ -27,7 +30,7 @@ LOGLVL = 30             # 10 - DEBUG, 20 - INFO, 30 - WARNING, 40 - ERROR, 50 - 
 
 # - Enviro -
 ROTATION = 270          # [0, 90, 180, 270] - default rotation for Enviro+ LCD
-DISPLAY = 0             # [0..10] - default display mode
+DISPLAY = 0             # [0..3] - default display mode
 PROGRESS = 0            # [0|1] - 1 = show upload progress bar on LCD
 SLEEP = 600             # Delay in seconds until screen is blanked
 
