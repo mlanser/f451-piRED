@@ -304,10 +304,10 @@ APP_JOYSTICK_ACTIONS = {
 #      M A I N   F U N C T I O N    /   A C T I O N S
 # =========================================================
 def main(cliArgs=None):
-    """Core function to run through demo.
+    """Main function.
 
-    This function will run through one or more 'demo' scenarios
-    depending on the arguments passed to CLI.
+    This function will goes through the setup and then runs the
+    main application loop.
 
     NOTE:
      -  Application will exit with error level 1 if invalid Adafruit IO
