@@ -30,7 +30,7 @@ NOTE: This code is based on the 'luftdaten_combined.py' example from the Enviro+
       for 'settings.toml', and more.
 
 Dependencies:
-    - adafruit-io - only install if you have physical Sense HAT
+    - adafruit-io - only install if you have an account with Adafruit IO
     - speedtest-cli - (optional) only used for internet speed tests 
 """
 
