@@ -17,7 +17,7 @@ keywords = ["red", "f451"]
 dependencies = [
     "f451-common",
     "f451-logger",
-    "f451-uploader",
+    "f451-cloud",
     "f451-sensehat",
 ]
 requires-python = ">=3.9"
