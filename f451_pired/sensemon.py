@@ -31,7 +31,6 @@ NOTE: This code is based on the 'luftdaten_combined.py' example from the Enviro+
 
 Dependencies:
     - adafruit-io - only install if you have an account with Adafruit IO
-    - speedtest-cli - (optional) only used for internet speed tests 
 """
 
 import argparse
@@ -52,6 +51,9 @@ import f451_cloud.cloud as f451Cloud
 import f451_sensehat.sensehat as f451SenseHat
 import f451_sensehat.sensehat_data as f451SenseData
 
+from rich.console import Console
+from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn
+
 from Adafruit_IO import RequestError, ThrottlingError
 
 
@@ -59,10 +61,15 @@ from Adafruit_IO import RequestError, ThrottlingError
 #          G L O B A L    V A R S   &   I N I T S
 # =========================================================
 APP_VERSION = "0.0.1"
-APP_NAME = "f451 piRED - SenseMon"
+APP_NAME = "f451 Labs piRED - SenseMon"
+APP_NAME_SHORT = "SenseMon"
 APP_LOG = "f451-pired-sensemon.log"     # Individual logs for devices with multiple apps
 APP_SETTINGS = "settings.toml"          # Standard for all f451 Labs projects
 APP_DIR = Path(__file__).parent         # Find dir for this app
+
+APP_MIN_SENSOR_READ_WAIT = 10           # Minimum wait in sec bettween sensor reads 
+APP_WAIT_1SEC = 1
+APP_WAIT_MIN = 5
 
 APP_DISPLAY_MODES = {
     f451SenseHat.KWD_DISPLAY_MIN: const.MAX_DISPL, 
@@ -90,7 +97,6 @@ except RequestError as e:
     LOGGER.log_error(f"Application terminated due to REQUEST ERROR: {e}")
     sys.exit(1)
 
-
 # We use these timers to track when to upload data and/or set
 # display to sleep mode. Normally we'd want them to be local vars 
 # inside 'main()'. However, since we need them reset them in the 
@@ -102,10 +108,25 @@ displayUpdate = timeUpdate
 # =========================================================
 #              H E L P E R   F U N C T I O N S
 # =========================================================
-def debug_config_info(cliArgs):
+def init_progressbar(refreshRate=2):
+    """Initialize new progress bar."""
+    return Progress(                     
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        transient=True,
+        refresh_per_second=refreshRate
+    )
+
+
+def debug_config_info(cliArgs, console=None):
     """Print/log some basic debug info."""
 
-    LOGGER.log_debug("-- Config Settings --")
+    if console:
+        console.rule("Config Settings", style="grey", align="center")
+    else:    
+        LOGGER.log_debug("-- Config Settings --")
+
     LOGGER.log_debug(f"DISPL ROT:   {SENSE_HAT.displRotation}")
     LOGGER.log_debug(f"DISPL MODE:  {SENSE_HAT.displMode}")
     LOGGER.log_debug(f"DISPL PROGR: {SENSE_HAT.displProgress}")
@@ -121,7 +142,6 @@ def debug_config_info(cliArgs):
 
     # Display CLI args
     LOGGER.log_debug(f"CLI Args:\n{cliArgs}")
-    LOGGER.log_debug("-- // --\n")
 
 
 def init_cli_parser():
@@ -135,7 +155,7 @@ def init_cli_parser():
     """
     parser = argparse.ArgumentParser(
         prog=APP_NAME,
-        description=f"{APP_NAME} [v{APP_VERSION}] - read sensor data from Enviro+ HAT and upload to Adafruit IO and/or Arduino Cloud.",
+        description=f"{APP_NAME} [v{APP_VERSION}] - read sensor data from Sense HAT and upload to Adafruit IO and/or Arduino Cloud.",
         epilog="NOTE: This application requires active accounts with corresponding cloud services.",
     )
 
@@ -179,6 +199,13 @@ def init_cli_parser():
         type=int,
         default=-1,
         help="number of uploads before exiting",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="show output to CLI stdout",
     )
 
     return parser
@@ -327,9 +354,10 @@ def main(cliArgs=None):
     global displayUpdate
 
     cli = init_cli_parser()
+    console = Console()
 
     # Show 'help' and exit if no args
-    cliArgs, unknown = cli.parse_known_args(cliArgs)
+    cliArgs, _ = cli.parse_known_args(cliArgs)
     if (not cliArgs and len(sys.argv) == 1):
         cli.print_help(sys.stdout)
         sys.exit(0)
@@ -337,6 +365,16 @@ def main(cliArgs=None):
     if cliArgs.version:
         print(f"{APP_NAME} (v{APP_VERSION})")
         sys.exit(0)
+
+    # Display LOGO :-)
+    conWidth, _ = console.size
+    print(f451Common.make_logo(
+            conWidth, 
+            APP_NAME_SHORT, 
+            f"v{APP_VERSION}", 
+            f"{APP_NAME} (v{APP_VERSION})"
+        )
+    )
 
     # Initialize Sense HAT joystick and LED display
     SENSE_HAT.joystick_init(**APP_JOYSTICK_ACTIONS)
@@ -349,10 +387,13 @@ def main(cliArgs=None):
     # Get core settings
     ioFreq = CONFIG.get(const.KWD_FREQ, const.DEF_FREQ)
     ioDelay = CONFIG.get(const.KWD_DELAY, const.DEF_DELAY)
-    ioWait = CONFIG.get(const.KWD_WAIT, const.DEF_WAIT)
+    ioWait = max(CONFIG.get(const.KWD_WAIT, const.DEF_WAIT), APP_MIN_SENSOR_READ_WAIT)
     ioThrottle = CONFIG.get(const.KWD_THROTTLE, const.DEF_THROTTLE)
     ioRounding = CONFIG.get(const.KWD_ROUNDING, const.DEF_ROUNDING)
     ioUploadAndExit = cliArgs.cron
+
+    logLvl = CONFIG.get(f451Logger.KWD_LOG_LEVEL, f451Logger.LOG_NOTSET)
+    debugMode = (logLvl == f451Logger.LOG_DEBUG)
 
     # Initialize core data queues
     tempCompFactor = CONFIG.get(f451Common.KWD_TEMP_COMP, f451Common.DEF_TEMP_COMP_FACTOR)
@@ -362,11 +403,16 @@ def main(cliArgs=None):
     senseData = f451SenseData.SenseData(1, SENSE_HAT.widthLED)
 
     # Update log file or level?
-    if cliArgs.log is not None:
-        LOGGER.set_log_file(CONFIG.get(f451Logger.KWD_LOG_LEVEL, f451Logger.LOG_NOTSET), cliArgs.log)
-
     if cliArgs.debug:
         LOGGER.set_log_level(f451Logger.LOG_DEBUG)
+        logLvl = f451Logger.LOG_DEBUG
+        debugMode = True
+
+    if cliArgs.log is not None:
+        LOGGER.set_log_file(logLvl, cliArgs.log)
+
+    if debugMode:
+        debug_config_info(cliArgs, console)
 
     # -- Main application loop --
     timeSinceUpdate = 0
@@ -377,7 +423,12 @@ def main(cliArgs=None):
     numUploads = 0
     exitNow = False
 
-    debug_config_info(cliArgs)
+    # Let user know that magic is about to happen ;-)
+    console.rule(style="grey", align="center")
+    print(f"{APP_NAME} (v{APP_VERSION})")
+    print(f"Work start:  {(datetime.now()):%a %b %-d, %Y at %-I:%M:%S %p}")
+
+    # If log level <= INFO
     LOGGER.log_info("-- START Data Logging --")
 
     try:
@@ -389,52 +440,55 @@ def main(cliArgs=None):
                 cliArgs.noDisplay
             )
 
-            # Get raw temp from sensor
-            tempRaw = SENSE_HAT.get_temperature()
+            # Get sensor data
+            with console.status("Reading sensors ..."):
+                # Get raw temp from sensor
+                tempRaw = SENSE_HAT.get_temperature()
 
-            # Get current CPU temp, add to queue, and calculate new average
-            #
-            # NOTE: This feature relies on the 'vcgencmd' which is found on
-            #       RPIs. If this is not run on a RPI (e.g. during testing),
-            #       then we need to neutralize the 'cpuTemp' compensation. 
-            cpuTempsQ.append(SENSE_HAT.get_CPU_temp(False))
-            cpuTempAvg = sum(cpuTempsQ) / float(cpuTempsQMaxLen)
+                # Get current CPU temp, add to queue, and calculate new average
+                #
+                # NOTE: This feature relies on the 'vcgencmd' which is found on
+                #       RPIs. If this is not run on a RPI (e.g. during testing),
+                #       then we need to neutralize the 'cpuTemp' compensation. 
+                cpuTempsQ.append(SENSE_HAT.get_CPU_temp(False))
+                cpuTempAvg = sum(cpuTempsQ) / float(cpuTempsQMaxLen)
 
-            # Smooth out with some averaging to decrease jitter
-            tempComp = tempRaw - ((cpuTempAvg - tempRaw) / tempCompFactor)
-            LOGGER.log_debug(f"TempComp: {round(tempComp, 1)} - AvgTempCPU: {round(cpuTempAvg, 1)} - TempRaw: {round(tempRaw, 1)}")
+                # Smooth out with some averaging to decrease jitter
+                tempComp = tempRaw - ((cpuTempAvg - tempRaw) / tempCompFactor)
 
-            pressRaw = SENSE_HAT.get_pressure()
-            humidRaw = SENSE_HAT.get_humidity()
+                # Get barometric pressure and humidity data
+                pressRaw = SENSE_HAT.get_pressure()
+                humidRaw = SENSE_HAT.get_humidity()
 
             # Is it time to upload data?
             if timeSinceUpdate >= uploadDelay:
-                try:
-                    asyncio.run(upload_sensor_data(
-                        temperature = round(tempComp, ioRounding), 
-                        pressure = round(pressRaw, ioRounding), 
-                        humidity = round(humidRaw, ioRounding), 
-                        deviceID = f451Common.get_RPI_ID(f451Common.DEF_ID_PREFIX)
-                    ))
+                with console.status("Uploading data ..."):
+                    try:
+                        asyncio.run(upload_sensor_data(
+                            temperature = round(tempComp, ioRounding), 
+                            pressure = round(pressRaw, ioRounding), 
+                            humidity = round(humidRaw, ioRounding), 
+                            deviceID = f451Common.get_RPI_ID(f451Common.DEF_ID_PREFIX)
+                        ))
 
-                except RequestError as e:
-                    LOGGER.log_error(f"Application terminated: {e}")
-                    sys.exit(1)
+                    except RequestError as e:
+                        LOGGER.log_error(f"Application terminated: {e}")
+                        sys.exit(1)
 
-                except ThrottlingError:
-                    # Keep increasing 'ioDelay' each time we get a 'ThrottlingError'
-                    uploadDelay += ioThrottle
-                    
-                else:
-                    # Reset 'uploadDelay' back to normal 'ioFreq' on successful upload
-                    numUploads += 1
-                    uploadDelay = ioFreq
-                    exitNow = (exitNow or ioUploadAndExit)
-                    LOGGER.log_info(f"Uploaded: TEMP: {round(tempComp, ioRounding)} - PRESS: {round(pressRaw, ioRounding)} - HUMID: {round(humidRaw, ioRounding)}")
+                    except ThrottlingError:
+                        # Keep increasing 'ioDelay' each time we get a 'ThrottlingError'
+                        uploadDelay += ioThrottle
+                        
+                    else:
+                        # Reset 'uploadDelay' back to normal 'ioFreq' on successful upload
+                        numUploads += 1
+                        uploadDelay = ioFreq
+                        exitNow = (exitNow or ioUploadAndExit)
+                        LOGGER.log_info(f"Uploaded: TEMP: {round(tempComp, ioRounding)} - PRESS: {round(pressRaw, ioRounding)} - HUMID: {round(humidRaw, ioRounding)}")
 
-                finally:
-                    timeUpdate = timeCurrent
-                    exitNow = ((maxUploads > 0) and (numUploads >= maxUploads))
+                    finally:
+                        timeUpdate = timeCurrent
+                        exitNow = ((maxUploads > 0) and (numUploads >= maxUploads))
 
             # Check display mode. Each mode corresponds to a data type
             if SENSE_HAT.displMode == const.IDX_TEMP:           # type = "temperature"
@@ -452,30 +506,30 @@ def main(cliArgs=None):
             else:                                               # Display sparkles
                 SENSE_HAT.display_sparkle()
 
-            # Let's rest a bit before we go through the loop again
-            if cliArgs.debug and not ioUploadAndExit:
-                sys.stdout.write(f"Time to next update: {uploadDelay - int(timeSinceUpdate)} sec \r")
-                sys.stdout.flush()
-
-            # Update progress bar as needed and rest a bit 
-            # before we do this all over again :-)
-            SENSE_HAT.display_progress(timeSinceUpdate / uploadDelay)
-            time.sleep(ioWait)
+            # Are we done?
+            if not exitNow and ioWait >= APP_WAIT_MIN:
+                # If not, then lets update the progress bar as needed, and then rest
+                # a bit before we go through this whole loop all over again ... phew!
+                cliProgress = init_progressbar()
+                with cliProgress:
+                    for _ in cliProgress.track(range(ioWait), description="Waiting for next sensor read ..."):
+                        SENSE_HAT.display_progress(timeSinceUpdate / uploadDelay)
+                        time.sleep(APP_WAIT_1SEC)
 
     except KeyboardInterrupt:
         exitNow = True
 
-    # A bit of clean-up before we exit
+    # If log level <= INFO
     LOGGER.log_info("-- END Data Logging --")
+
+    # A bit of clean-up before we exit ...
     SENSE_HAT.display_reset()
     SENSE_HAT.display_off()
     
-    now = datetime.now()
-    print(f"\n{APP_NAME} [v{APP_VERSION}] - finished.\n")
+    # ... and display summary info
+    print(f"Work end:    {(datetime.now()):%a %b %-d, %Y at %-I:%M:%S %p}")
     print(f"Num uploads: {numUploads}")
-    print(f"Date:        {now:%a %b %-d, %Y}")
-    print(f"Time:        {now:%-I:%M:%S %p}")
-    print("---- [ END ] ----\n")
+    console.rule(style="grey", align="center")
 
 
 # =========================================================
