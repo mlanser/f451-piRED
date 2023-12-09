@@ -37,12 +37,14 @@ import argparse
 import time
 import sys
 import asyncio
+import random
 
 from pathlib import Path
 from datetime import datetime
 from collections import deque
 
 from . import constants as const
+from . import sensemon_ui as UI
 
 import f451_common.common as f451Common
 import f451_logger.logger as f451Logger
@@ -51,8 +53,18 @@ import f451_cloud.cloud as f451Cloud
 import f451_sensehat.sensehat as f451SenseHat
 import f451_sensehat.sensehat_data as f451SenseData
 
-from rich.console import Console
-from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn
+# from rich import box
+# from rich.align import Align
+# from rich.console import Console
+# from rich.layout import Layout
+from rich.live import Live
+# from rich.panel import Panel
+# from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn
+# from rich.text import Text
+# from rich.rule import Rule
+# from rich.status import Status
+# from rich.table import Table
+from rich.traceback import install as install_rich_traceback
 
 from Adafruit_IO import RequestError, ThrottlingError
 
@@ -60,6 +72,8 @@ from Adafruit_IO import RequestError, ThrottlingError
 # =========================================================
 #          G L O B A L    V A R S   &   I N I T S
 # =========================================================
+install_rich_traceback(show_locals=True)
+
 APP_VERSION = "0.0.1"
 APP_NAME = "f451 Labs piRED - SenseMon"
 APP_NAME_SHORT = "SenseMon"
@@ -70,6 +84,7 @@ APP_DIR = Path(__file__).parent         # Find dir for this app
 APP_MIN_SENSOR_READ_WAIT = 10           # Minimum wait in sec bettween sensor reads 
 APP_WAIT_1SEC = 1
 APP_WAIT_MIN = 5
+APP_MAX_DATA = 120                      # Max number of data points in the queue
 
 APP_DISPLAY_MODES = {
     f451SenseHat.KWD_DISPLAY_MIN: const.MAX_DISPL, 
@@ -108,17 +123,6 @@ displayUpdate = timeUpdate
 # =========================================================
 #              H E L P E R   F U N C T I O N S
 # =========================================================
-def init_progressbar(refreshRate=2):
-    """Initialize new progress bar."""
-    return Progress(                     
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        transient=True,
-        refresh_per_second=refreshRate
-    )
-
-
 def debug_config_info(cliArgs, console=None):
     """Print/log some basic debug info."""
 
@@ -177,7 +181,13 @@ def init_cli_parser():
         help="use when running as cron job - run script once and exit",
     )
     parser.add_argument(
-        "--noDisplay",
+        "--noCLI",
+        action="store_true",
+        default=False,
+        help="do not display output on CLI",
+    )
+    parser.add_argument(
+        "--noLED",
         action="store_true",
         default=False,
         help="do not display output on LED",
@@ -353,10 +363,8 @@ def main(cliArgs=None):
     global timeUpdate
     global displayUpdate
 
+    # Parse CLI args and show 'help' and exit if no args
     cli = init_cli_parser()
-    console = Console()
-
-    # Show 'help' and exit if no args
     cliArgs, _ = cli.parse_known_args(cliArgs)
     if (not cliArgs and len(sys.argv) == 1):
         cli.print_help(sys.stdout)
@@ -366,20 +374,19 @@ def main(cliArgs=None):
         print(f"{APP_NAME} (v{APP_VERSION})")
         sys.exit(0)
 
-    # Display LOGO :-)
-    conWidth, _ = console.size
-    print(f451Common.make_logo(
-            conWidth, 
-            APP_NAME_SHORT, 
-            f"v{APP_VERSION}", 
-            f"{APP_NAME} (v{APP_VERSION})"
-        )
+    # Initialize UI for terminal
+    screen = UI.SenseMonUI()
+    screen.initialize(
+        APP_NAME,
+        APP_NAME_SHORT,
+        APP_VERSION, 
+        not cliArgs.noCLI
     )
 
     # Initialize Sense HAT joystick and LED display
     SENSE_HAT.joystick_init(**APP_JOYSTICK_ACTIONS)
     SENSE_HAT.display_init(**APP_DISPLAY_MODES)
-    SENSE_HAT.update_sleep_mode(cliArgs.noDisplay)
+    SENSE_HAT.update_sleep_mode(cliArgs.noLED)
 
     if cliArgs.progress:
         SENSE_HAT.displProgress(True)
@@ -400,7 +407,8 @@ def main(cliArgs=None):
     cpuTempsQMaxLen = CONFIG.get(f451Common.KWD_MAX_LEN_CPU_TEMPS, f451Common.MAX_LEN_CPU_TEMPS)
     cpuTempsQ = deque([SENSE_HAT.get_CPU_temp(False)] * cpuTempsQMaxLen, maxlen=cpuTempsQMaxLen)
 
-    senseData = f451SenseData.SenseData(1, SENSE_HAT.widthLED)
+    # senseData = f451SenseData.SenseData(1, SENSE_HAT.widthLED)
+    senseData = f451SenseData.SenseData(1, APP_MAX_DATA)
 
     # Update log file or level?
     if cliArgs.debug:
@@ -412,7 +420,7 @@ def main(cliArgs=None):
         LOGGER.set_log_file(logLvl, cliArgs.log)
 
     if debugMode:
-        debug_config_info(cliArgs, console)
+        debug_config_info(cliArgs, screen.console)
 
     # -- Main application loop --
     timeSinceUpdate = 0
@@ -424,24 +432,26 @@ def main(cliArgs=None):
     exitNow = False
 
     # Let user know that magic is about to happen ;-)
-    console.rule(style="grey", align="center")
-    print(f"{APP_NAME} (v{APP_VERSION})")
-    print(f"Work start:  {(datetime.now()):%a %b %-d, %Y at %-I:%M:%S %p}")
+    # screen.update_action(UI.STATUS_LBL_WAIT)
 
     # If log level <= INFO
     LOGGER.log_info("-- START Data Logging --")
 
-    try:
-        while not exitNow:
-            timeCurrent = time.time()
-            timeSinceUpdate = timeCurrent - timeUpdate
-            SENSE_HAT.update_sleep_mode(
-                (timeCurrent - displayUpdate) > SENSE_HAT.displSleepTime,
-                cliArgs.noDisplay
-            )
+    with Live(screen.layout, screen=True, redirect_stderr=False) as live:
+        # layout.update_data([])
+        try:
+            while not exitNow:
+                timeCurrent = time.time()
+                timeSinceUpdate = timeCurrent - timeUpdate
+                SENSE_HAT.update_sleep_mode(
+                    (timeCurrent - displayUpdate) > SENSE_HAT.displSleepTime,
+                    cliArgs.noLED
+                )
 
-            # Get sensor data
-            with console.status("Reading sensors ..."):
+                # --- Get sensor data ---
+                #
+                screen.update_action("Reading sensors ...")
+
                 # Get raw temp from sensor
                 tempRaw = SENSE_HAT.get_temperature()
 
@@ -459,10 +469,13 @@ def main(cliArgs=None):
                 # Get barometric pressure and humidity data
                 pressRaw = SENSE_HAT.get_pressure()
                 humidRaw = SENSE_HAT.get_humidity()
+                #
+                # ---
 
-            # Is it time to upload data?
-            if timeSinceUpdate >= uploadDelay:
-                with console.status("Uploading data ..."):
+                # Is it time to upload data?
+                if timeSinceUpdate >= uploadDelay:
+                    screen.update_action("Uploading ...")
+
                     try:
                         asyncio.run(upload_sensor_data(
                             temperature = round(tempComp, ioRounding), 
@@ -484,40 +497,50 @@ def main(cliArgs=None):
                         numUploads += 1
                         uploadDelay = ioFreq
                         exitNow = (exitNow or ioUploadAndExit)
+                        screen.update_upload_status(timeCurrent, UI.STATUS_OK, timeCurrent + uploadDelay)
                         LOGGER.log_info(f"Uploaded: TEMP: {round(tempComp, ioRounding)} - PRESS: {round(pressRaw, ioRounding)} - HUMID: {round(humidRaw, ioRounding)}")
 
                     finally:
                         timeUpdate = timeCurrent
                         exitNow = ((maxUploads > 0) and (numUploads >= maxUploads))
+                        screen.update_action(UI.STATUS_LBL_WAIT)
 
-            # Check display mode. Each mode corresponds to a data type
-            if SENSE_HAT.displMode == const.IDX_TEMP:           # type = "temperature"
-                senseData.temperature.data.append(tempComp)
-                SENSE_HAT.display_as_graph(senseData.temperature.as_dict())
+                # Update terminal as needed
+                screen.update_data([
+                    senseData.temperature.as_dict(),
+                    senseData.pressure.as_dict(),
+                    senseData.humidity.as_dict(),
+                ])
 
-            elif SENSE_HAT.displMode == const.IDX_PRESS:        # type = "pressure"
-                senseData.pressure.data.append(pressRaw)
-                SENSE_HAT.display_as_graph(senseData.pressure.as_dict())
+                # Check display mode. Each mode corresponds to a data type
+                if SENSE_HAT.displMode == const.IDX_TEMP:           # type = "temperature"
+                    senseData.temperature.data.append(tempComp)
+                    SENSE_HAT.display_as_graph(senseData.temperature.as_dict())
 
-            elif SENSE_HAT.displMode == const.IDX_HUMID:        # type = "humidity"
-                senseData.humidity.data.append(humidRaw)
-                SENSE_HAT.display_as_graph(senseData.humidity.as_dict())
-                    
-            else:                                               # Display sparkles
-                SENSE_HAT.display_sparkle()
+                elif SENSE_HAT.displMode == const.IDX_PRESS:        # type = "pressure"
+                    senseData.pressure.data.append(pressRaw)
+                    SENSE_HAT.display_as_graph(senseData.pressure.as_dict())
 
-            # Are we done?
-            if not exitNow and ioWait >= APP_WAIT_MIN:
-                # If not, then lets update the progress bar as needed, and then rest
-                # a bit before we go through this whole loop all over again ... phew!
-                cliProgress = init_progressbar()
-                with cliProgress:
-                    for _ in cliProgress.track(range(ioWait), description="Waiting for next sensor read ..."):
-                        SENSE_HAT.display_progress(timeSinceUpdate / uploadDelay)
-                        time.sleep(APP_WAIT_1SEC)
+                elif SENSE_HAT.displMode == const.IDX_HUMID:        # type = "humidity"
+                    senseData.humidity.data.append(humidRaw)
+                    SENSE_HAT.display_as_graph(senseData.humidity.as_dict())
+                        
+                else:                                               # Display sparkles
+                    SENSE_HAT.display_sparkle()
 
-    except KeyboardInterrupt:
-        exitNow = True
+                # Are we done?
+                if not exitNow and ioWait >= APP_WAIT_MIN:
+                    time.sleep(APP_WAIT_1SEC)
+                    # If not, then lets update the progress bar as needed, and then rest
+                    # a bit before we go through this whole loop all over again ... phew!
+                    # cliProgress = init_progressbar()
+                    # with cliProgress:
+                    #     for _ in cliProgress.track(range(ioWait), description="Waiting for next sensor read ..."):
+                    #         SENSE_HAT.display_progress(timeSinceUpdate / uploadDelay)
+                    #         time.sleep(APP_WAIT_1SEC)
+
+        except KeyboardInterrupt:
+            exitNow = True
 
     # If log level <= INFO
     LOGGER.log_info("-- END Data Logging --")
@@ -529,7 +552,7 @@ def main(cliArgs=None):
     # ... and display summary info
     print(f"Work end:    {(datetime.now()):%a %b %-d, %Y at %-I:%M:%S %p}")
     print(f"Num uploads: {numUploads}")
-    console.rule(style="grey", align="center")
+    # console.rule(style="grey", align="center")
 
 
 # =========================================================
