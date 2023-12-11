@@ -15,6 +15,9 @@ classifiers = [
 ]
 keywords = ["red", "f451"]
 dependencies = [
+    "rich",
+    "sparklines",
+    "termcolor",
     "f451-common",
     "f451-logger",
     "f451-cloud",

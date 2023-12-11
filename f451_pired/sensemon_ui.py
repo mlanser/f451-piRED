@@ -28,6 +28,7 @@ from rich.table import Table
 from sparklines import sparklines
 
 import f451_common.common as f451Common
+import f451_sensehat.sensehat_data as f451SenseData
 
 
 # =========================================================
@@ -47,6 +48,18 @@ STATUS_LBL_INIT = "Initializing ..."
 STATUS_LBL_UPLD = "Uploading ..."
 
 HDR_STATUS = "Uploads"
+VAL_BLANK_STR = "--"                    # Use for 'blank' value
+
+COLOR_DEF = "grey"                      # Default color
+COLOR_OK = "green"
+COLOR_ERROR = "bold red"
+
+CHAR_DIR_UP = '↑'                       # UP arrow to indicate increase
+CHAR_DIR_EQ = '↔︎'                       # SIDEWAYS arrow to little/no change
+CHAR_DIR_DWN = '↓'                      # DOWN arrow to indicate decline
+CHAR_DIR_DEF = ' '                      # 'blank' to indicate unknown change
+
+DELTA_FACTOR = 0.02                     # Any change with X% is considered negligable
 
 # =========================================================
 #    H E L P E R   C L A S S E S   &   F U N C T I O N S
@@ -75,40 +88,90 @@ class Logo:
         return f"{type(self.__name__)}(plain={self._plain!r})"
 
 
-def render_table(data=[]):
-    """Make a new table."""
-    table = Table(show_header = True, show_footer = False, show_edge = True, show_lines = True, expand = True, box = box.SQUARE_DOUBLE_HEAD)
-    table.add_column("Description", max_width = 12)
-    table.add_column("Current", max_width = 8)
-    table.add_column("History", min_width = 20)
+def render_footer(appName, conWidth):
+    footer = Text()
 
+    # Assemble colorful legend
+    footer.append("  LOW ", f451SenseData.COLOR_MAP[f451SenseData.COLOR_LOW])
+    footer.append("NORMAL ", f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM])
+    footer.append("HIGH", f451SenseData.COLOR_MAP[f451SenseData.COLOR_HIGH])
+
+    # Add app name and version and push to the right
+    footer.append(appName.rjust(conWidth - len(str(footer)) - 2))
+    footer.end = ""
+
+    return footer
+
+
+def render_table(data=[], labelsOnly=False):
+    """Make a new table
+    
+    This is a beefy function and (re-)renders the whole table
+    on each update so that we get that real-time update feel.
+
+    Args:
+        data: 
+            'list' of data rows, each with a specific data set render
+        labelsOnly:
+            'bool' if 'True' that we only render labels and no data
+    """
+
+    def _prep_currval_str(val, unit, color, valPrev = None, labelsOnly = False):
+        """Prep string for displaying current/last data point
+
+        This is a formatted string with a data value and unit of 
+        measure. The largest value will be 4 digits + 2 decimals. 
+        We also want values to be right-justfied and align on the 
+        decimal point.
+        
+        -->|        |<--
+           |12345678|
+        ---|--------|---
+           |1,234.56|      <- Need min 8 char width for data values
+           |    1.23|
+        """
+        text = Text()
+        dirChar = CHAR_DIR_DEF
+
+        if labelsOnly or val is None:
+            text.append(f"{VAL_BLANK_STR} {unit}", COLOR_DEF)
+        else:
+            if valPrev is not None:
+                if val > (valPrev * (1 + DELTA_FACTOR)):
+                    dirChar = CHAR_DIR_UP
+                elif val < (valPrev * (1 - DELTA_FACTOR)):
+                    dirChar = CHAR_DIR_DWN
+                else:
+                    dirChar = CHAR_DIR_EQ
+
+            text.append(f"{dirChar} {val:>8,.2f} {unit}", color)
+
+        return text
+
+    def _prep_sparkline_str(vals, colors, labelsOnly):
+        """Prep sparkline graph string"""
+        return "" if (labelsOnly or not vals) else sparklines(vals, num_lines = 1, minimum = 0, maximum = 8)[-1]
+
+    # Build a table
+    table = Table(show_header = True, show_footer = False, show_edge = True, show_lines = True, expand = True, box = box.SQUARE_DOUBLE_HEAD)
+    table.add_column(Text("Description", justify = "center"), ratio = 1, width = 12, no_wrap = True, overflow = '')
+    table.add_column(Text("Current", justify = "center"), ratio = 1, width = 16, no_wrap = True, overflow = '')
+    table.add_column(Text("History", justify = "center"), ratio = 4, min_width = 12, no_wrap = True, overflow = '')
+
+    # Render rows with/without data
     if data:
         for row in data:
             table.add_row(
                 row["label"], 
-                f"{row['data'][-1]:3.2f} {row['unit']}", 
-                sparklines(list(row['data'])[-20])[-1]
+                _prep_currval_str(row['dataPt'], row['unit'], row['dataPtColor'], row['dataPtPrev'], labelsOnly),
+                _prep_sparkline_str(row['sparkData'][-40:], row['sparkColors'], labelsOnly)
             )
-        # table.add_row("Temperature", f"{random.random() * 100:3.2f}", sparklines([random.randint(1, 20) for _ in range(20)])[-1])
-        # table.add_row("Humidity", f"{random.random() * 100:3.2f}", sparklines([random.randint(1, 20) for _ in range(20)])[-1])
-        # table.add_row("Pressure", f"{random.random() * 100:3.2f}", sparklines([random.randint(1, 20) for _ in range(20)])[-1])
     else:
-        table.add_row("Temperature", "", "")
-        table.add_row("Humidity", "", "")
-        table.add_row("Pressure", "", "")
+        table.add_row('', '', '')
+        table.add_row('', '', '')
+        table.add_row('', '', '')
 
     return table
-
-
-def init_progressbar(refreshRate=2):
-    """Initialize new progress bar."""
-    return Progress(                     
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        transient=True,
-        refresh_per_second=refreshRate
-    )
 
 
 # =========================================================
@@ -122,8 +185,8 @@ class SenseMonUI:
         self._conHeight = 0
         self._active = False
         self.logo = None
-        self.show24h = True         # Show 24-hour time
-        self.showLocal = True       # Show local time
+        self.show24h = False        # Show 24-hour time?
+        self.showLocal = True       # Show local time?
         self.statusHdr = HDR_STATUS
         self.statusLblNext = STATUS_LBL_NEXT
         self.statusLblLast = STATUS_LBL_LAST
@@ -155,7 +218,18 @@ class SenseMonUI:
                 time.localtime(t) if self.showLocal else time.gmtime(t)
             )
     
-    def initialize(self, appNameLong, appNameShort, appVer, enable=True):
+    @staticmethod
+    def init_progressbar(refreshRate=2):
+        """Initialize new progress bar."""
+        return Progress(                     
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            transient=True,
+            refresh_per_second=refreshRate
+        )
+
+    def initialize(self, appNameLong, appNameShort, appVer, dataRows, enable=True):
         console = Console()
         layout = Layout()
 
@@ -168,9 +242,9 @@ class SenseMonUI:
         )
 
         # Is the terminal window big enough to hold the layout? Or does 
-        # user not want UI?
+        # user not want UI? If not, then we're done.
         if not enable or conWidth < APP_1COL_MIN_WIDTH or conHeight < APP_MIN_CLI_HEIGHT:
-            return              # We're done!
+            return
         
         # If terminal window is wide enough, then split header 
         # row and show fancy logo ...
@@ -205,17 +279,17 @@ class SenseMonUI:
         if logo.rows > 1:
             layout["logo"].update(logo)
 
-        layout["actHdr"].update(Rule(title=self.statusHdr, style = "grey", end = ''))
+        layout["actHdr"].update(Rule(title=self.statusHdr, style = COLOR_DEF, end = ''))
         layout["actNextUpld"].update(Text(f"{self.statusLblNext}--:--:--"))
         layout["actLastUpld"].update(Text(f"{self.statusLblLast}--:--:--"))
         layout["actNumUpld"].update(Text(f"{self.statusLblTotUpld}-"))
         layout["actCurrent"].update(Status(STATUS_LBL_INIT))
 
         # Display main row
-        layout["main"].update(render_table())
+        layout["main"].update(render_table(dataRows, True))
 
         # Display footer row
-        layout["footer"].update(Text(logo.plain, justify="right"))
+        layout["footer"].update(render_footer(logo.plain, conWidth))
 
         # Updating properties for this object ... and then we're done
         self._console = console
@@ -226,32 +300,44 @@ class SenseMonUI:
         self.logo = logo
 
     def update_data(self, data):
-        self._layout["main"].update(render_table(data))
+        if self._active:
+            self._layout["main"].update(render_table(data))
+
+    def update_upload_num(self, num):
+        if self._active:
+            self._layout["actNumUpld"].update(
+                Text(f"{self.statusLblTotUpld}{num}", COLOR_DEF)
+            )
 
     def update_upload_next(self, nextTime):
-        self._layout["actNextUpld"].update(
-            Text(f"{self.statusLblNext}{self._make_time_str(nextTime)}", "grey")
-        )
+        if self._active:
+            self._layout["actNextUpld"].update(
+                Text(f"{self.statusLblNext}{self._make_time_str(nextTime)}", COLOR_DEF)
+            )
 
     def update_upload_last(self, lastTime, lastStatus=STATUS_OK):
-        if lastStatus == STATUS_OK:
-            color = "grey"
-            statusMsg = "[OK]"
-        else:
-            color = "red"
-            statusMsg = "[Error]"
-        
-        self._layout["actLastUpld"].update(
-            Text(f"{self.statusLblNext}{self._make_time_str(lastTime)} {statusMsg}", color)
-        )
+        if self._active:
+            text = Text()
+            text.append(f"{self.statusLblLast}{self._make_time_str(lastTime)} ", style = COLOR_DEF)
 
-    def update_upload_status(self, lastTime, lastStatus, nextTime):
-        self.update_upload_next(nextTime)
-        self.update_upload_last(lastTime, lastStatus)
+            if lastStatus == STATUS_OK:
+                text.append("[OK]", COLOR_OK)
+            else:
+                text.append("[Error]", COLOR_ERROR)
+            
+            self._layout["actLastUpld"].update(text)
 
-    def update_action(self, actMsg=None, actType="status"):
-        msgStr = actMsg if actMsg else self.statusLblAction
-        if actType == "progress": 
+    def update_upload_status(self, lastTime, lastStatus, nextTime, numUploads):
+        if self._active:
+            self.update_upload_next(nextTime)
+            self.update_upload_last(lastTime, lastStatus)
+            self.update_upload_num(numUploads)
+
+    def update_action(self, actMsg=None):
+        if self._active:
+            msgStr = actMsg if actMsg else self.statusLblAction
             self._layout["actCurrent"].update(Status(msgStr))
-        else:
-            self._layout["actCurrent"].update(Status(msgStr))
+
+    def update_progress(self, progress=None):
+        if self._active and progress is not None:
+            self._layout["actCurrent"].update(progress)

@@ -53,17 +53,7 @@ import f451_cloud.cloud as f451Cloud
 import f451_sensehat.sensehat as f451SenseHat
 import f451_sensehat.sensehat_data as f451SenseData
 
-# from rich import box
-# from rich.align import Align
-# from rich.console import Console
-# from rich.layout import Layout
 from rich.live import Live
-# from rich.panel import Panel
-# from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn
-# from rich.text import Text
-# from rich.rule import Rule
-# from rich.status import Status
-# from rich.table import Table
 from rich.traceback import install as install_rich_traceback
 
 from Adafruit_IO import RequestError, ThrottlingError
@@ -81,10 +71,12 @@ APP_LOG = "f451-pired-sensemon.log"     # Individual logs for devices with multi
 APP_SETTINGS = "settings.toml"          # Standard for all f451 Labs projects
 APP_DIR = Path(__file__).parent         # Find dir for this app
 
-APP_MIN_SENSOR_READ_WAIT = 10           # Minimum wait in sec bettween sensor reads 
+APP_MIN_SENSOR_READ_WAIT = 1            # Min wait in sec between sensor reads
+APP_MIN_PROG_WAIT = 5                   # Remaining min wait time to display prog bar
 APP_WAIT_1SEC = 1
-APP_WAIT_MIN = 5
 APP_MAX_DATA = 120                      # Max number of data points in the queue
+
+APP_DATA_TYPES = ["temperature", "pressure", "humidity"]
 
 APP_DISPLAY_MODES = {
     f451SenseHat.KWD_DISPLAY_MIN: const.MAX_DISPL, 
@@ -140,12 +132,124 @@ def debug_config_info(cliArgs, console=None):
     LOGGER.log_debug(f"IO WAIT:     {CONFIG.get(const.KWD_WAIT, const.DEF_WAIT)}")
     LOGGER.log_debug(f"IO THROTTLE: {CONFIG.get(const.KWD_THROTTLE, const.DEF_THROTTLE)}")
 
+    LOGGER.log_debug(f"TEMP COMP:   {CONFIG.get(f451Common.KWD_TEMP_COMP, f451Common.DEF_TEMP_COMP_FACTOR)}")
+
     # Display Raspberry Pi serial and Wi-Fi status
     LOGGER.log_debug(f"Raspberry Pi serial: {f451Common.get_RPI_serial_num()}")
     LOGGER.log_debug(f"Wi-Fi: {(f451Common.STATUS_YES if f451Common.check_wifi() else f451Common.STATUS_UNKNOWN)}")
 
     # Display CLI args
     LOGGER.log_debug(f"CLI Args:\n{cliArgs}")
+
+
+def prep_data_for_screen(inData, labelsOnly=False):
+    """Prep data for display in terminal
+    
+    We only display temperature, humidity, and pressure, and we 
+    need to normalize all data to fit within the 1-8 range. We
+    can use 0 for missing values and for values that fall outside the 
+    valid range for the Sense HAT, which we'll assume are erroneous.
+
+    NOTE: We need to map the data sets agains a numeric range of 1-8 so 
+          that we can display them as sparkline graphs in the terminal.
+
+    NOTE: We're using the 'limits' list to color the values, which means
+          we need to create a special 'coloring' set for the sparkline
+          graphs using converted limit values.
+
+          The limits list has 4 values (see also 'SenseData' class) and 
+          we need to map them to colors:
+
+          Limit set [A, B, C, D] means:
+                A > value      -> Dangerously Low    = "bright_red"
+                A < value < B  -> Low                = "bright_yellow"
+                B < value < C  -> Normal             = "green"
+                C < value < D  -> High               = "cyan"
+                    value > D  -> Dangerously High   = "blue"
+
+          Note that the Sparkline library has a specific syntax for 
+          limits and colors:
+
+            "<name of color>:<gt|eq|lt>:<value>"
+
+          Also, we only care about 'low', 'normal', and 'high'
+             
+    Args:
+        inData: 'dict' with Sense HAT data
+    
+    Returns:
+        'list' with processed data and only with data rows (i.e. temp, 
+        humidity, pressure) and columns (i.e. label, last data pt, and 
+        sparkline) that we want to display. Each row in the list is
+        designed for display in the terminal.
+    """
+    outData = []
+
+    def _convert_value(val, valid, inMinMax, force=False):
+        """Map a given value against a range for sparklines
+        
+        We need convert our data points from the sensor reads to 
+        something that we can use with sparklines. This means we'll
+        clean up and/or clamp values as needed.
+        
+        We default to 'None' unless we want to 'force' clamping 
+        for out-of-bound values.
+        """
+        outVal = 0 if force else None
+
+        if val is not None and (float(val) >= float(valid[0]) and float(val) <= float(valid[1])):
+            outVal = f451Common.num_to_range(val, inMinMax, (1, 8), force)
+
+        return outVal
+
+    def _process_spark_data(data, valid):
+        """Normalize data to fit in range for sparkline graphs"""
+        filtered = [i for i in data if i is not None]
+        return [_convert_value(i, valid, (min(filtered), max(filtered)), False) for i in filtered]
+
+    def _process_spark_limits(data, valid):
+        """Create color mapping for sparkline graphs"""
+        processed = [_convert_value(i, valid, (min(data), max(data)), True) for i in data]
+        return [
+            f"{f451SenseData.COLOR_MAP[f451SenseData.COLOR_LOW]}:lt:{round(processed[1], 1)}",   # Low
+            f"{f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM]}:lt:{round(processed[2], 1)}",  # Normal
+            f"{f451SenseData.COLOR_MAP[f451SenseData.COLOR_HIGH]}:gt:{round(processed[2], 1)}",  # High
+        ]
+        
+    def _process_data_limits(val, valid, limits, default=""):
+        """Determine color mapping for specific value"""
+        color = default
+
+        if val is not None and (float(val) >= float(valid[0]) and float(val) <= float(valid[1])):
+            if val < round(limits[1], 1):
+                color = f451SenseData.COLOR_MAP[f451SenseData.COLOR_LOW]
+            elif val < round(limits[2], 1):
+                color = f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM]
+            else:
+                color = f451SenseData.COLOR_MAP[f451SenseData.COLOR_HIGH]
+        
+        return color
+
+    # Process each data row and create a new data structure that we can use
+    # for displaying all necessary data in the terminal.
+    for key, row in inData.items():
+        if key in APP_DATA_TYPES:
+            sparkData = list(row['data']) if labelsOnly else _process_spark_data(row['data'], row['valid'])
+            sparkColors = [] if labelsOnly else _process_spark_limits(row['limits'], row['valid'])
+            dataPtColor = "" if labelsOnly else _process_data_limits(row['data'][-1], row['valid'], row['limits'])
+
+            outData.append({
+                'sparkData': sparkData,
+                'sparkColors': sparkColors,
+                'dataPt': row['data'][-1],
+                'dataPtPrev': row['data'][-2],
+                'dataPtColor': dataPtColor,
+                'dataLimits': row['limits'],
+                'unit': row['unit'],
+                'label': row['label']
+            })
+
+    return outData
 
 
 def init_cli_parser():
@@ -374,12 +478,22 @@ def main(cliArgs=None):
         print(f"{APP_NAME} (v{APP_VERSION})")
         sys.exit(0)
 
+    # Initialize core data queues
+    senseData = f451SenseData.SenseData(None, APP_MAX_DATA)
+    tempCompFactor = CONFIG.get(f451Common.KWD_TEMP_COMP, f451Common.DEF_TEMP_COMP_FACTOR)
+    tempCompYN = (tempCompFactor > 0)  # If 0 (zero) then do not compensate for CPU temp
+
+    if tempCompYN:
+        cpuTempsQMaxLen = CONFIG.get(f451Common.KWD_MAX_LEN_CPU_TEMPS, f451Common.MAX_LEN_CPU_TEMPS)
+        cpuTempsQ = deque([SENSE_HAT.get_CPU_temp(False)] * cpuTempsQMaxLen, maxlen=cpuTempsQMaxLen)
+
     # Initialize UI for terminal
     screen = UI.SenseMonUI()
     screen.initialize(
         APP_NAME,
         APP_NAME_SHORT,
-        APP_VERSION, 
+        APP_VERSION,
+        prep_data_for_screen(senseData.as_dict(), True), 
         not cliArgs.noCLI
     )
 
@@ -402,14 +516,6 @@ def main(cliArgs=None):
     logLvl = CONFIG.get(f451Logger.KWD_LOG_LEVEL, f451Logger.LOG_NOTSET)
     debugMode = (logLvl == f451Logger.LOG_DEBUG)
 
-    # Initialize core data queues
-    tempCompFactor = CONFIG.get(f451Common.KWD_TEMP_COMP, f451Common.DEF_TEMP_COMP_FACTOR)
-    cpuTempsQMaxLen = CONFIG.get(f451Common.KWD_MAX_LEN_CPU_TEMPS, f451Common.MAX_LEN_CPU_TEMPS)
-    cpuTempsQ = deque([SENSE_HAT.get_CPU_temp(False)] * cpuTempsQMaxLen, maxlen=cpuTempsQMaxLen)
-
-    # senseData = f451SenseData.SenseData(1, SENSE_HAT.widthLED)
-    senseData = f451SenseData.SenseData(1, APP_MAX_DATA)
-
     # Update log file or level?
     if cliArgs.debug:
         LOGGER.set_log_level(f451Logger.LOG_DEBUG)
@@ -431,14 +537,13 @@ def main(cliArgs=None):
     numUploads = 0
     exitNow = False
 
-    # Let user know that magic is about to happen ;-)
-    # screen.update_action(UI.STATUS_LBL_WAIT)
+    # Let user know when first upload will happen
+    screen.update_upload_next(timeUpdate + uploadDelay)
 
     # If log level <= INFO
     LOGGER.log_info("-- START Data Logging --")
 
     with Live(screen.layout, screen=True, redirect_stderr=False) as live:
-        # layout.update_data([])
         try:
             while not exitNow:
                 timeCurrent = time.time()
@@ -453,18 +558,20 @@ def main(cliArgs=None):
                 screen.update_action("Reading sensors ...")
 
                 # Get raw temp from sensor
-                tempRaw = SENSE_HAT.get_temperature()
+                tempRaw = tempComp = SENSE_HAT.get_temperature()
 
-                # Get current CPU temp, add to queue, and calculate new average
-                #
-                # NOTE: This feature relies on the 'vcgencmd' which is found on
-                #       RPIs. If this is not run on a RPI (e.g. during testing),
-                #       then we need to neutralize the 'cpuTemp' compensation. 
-                cpuTempsQ.append(SENSE_HAT.get_CPU_temp(False))
-                cpuTempAvg = sum(cpuTempsQ) / float(cpuTempsQMaxLen)
+                # Do we need to compensate for CPUY temp?
+                if tempCompYN:
+                    # Get current CPU temp, add to queue, and calculate new average
+                    #
+                    # NOTE: This feature relies on the 'vcgencmd' which is found on
+                    #       RPIs. If this is not run on a RPI (e.g. during testing),
+                    #       then we need to neutralize the 'cpuTemp' compensation. 
+                    cpuTempsQ.append(SENSE_HAT.get_CPU_temp(False))
+                    cpuTempAvg = sum(cpuTempsQ) / float(cpuTempsQMaxLen)
 
-                # Smooth out with some averaging to decrease jitter
-                tempComp = tempRaw - ((cpuTempAvg - tempRaw) / tempCompFactor)
+                    # Smooth out with some averaging to decrease jitter
+                    tempComp = tempRaw - ((cpuTempAvg - tempRaw) / tempCompFactor)
 
                 # Get barometric pressure and humidity data
                 pressRaw = SENSE_HAT.get_pressure()
@@ -475,7 +582,6 @@ def main(cliArgs=None):
                 # Is it time to upload data?
                 if timeSinceUpdate >= uploadDelay:
                     screen.update_action("Uploading ...")
-
                     try:
                         asyncio.run(upload_sensor_data(
                             temperature = round(tempComp, ioRounding), 
@@ -483,6 +589,7 @@ def main(cliArgs=None):
                             humidity = round(humidRaw, ioRounding), 
                             deviceID = f451Common.get_RPI_ID(f451Common.DEF_ID_PREFIX)
                         ))
+                        # time.sleep(5)
 
                     except RequestError as e:
                         LOGGER.log_error(f"Application terminated: {e}")
@@ -497,7 +604,7 @@ def main(cliArgs=None):
                         numUploads += 1
                         uploadDelay = ioFreq
                         exitNow = (exitNow or ioUploadAndExit)
-                        screen.update_upload_status(timeCurrent, UI.STATUS_OK, timeCurrent + uploadDelay)
+                        screen.update_upload_status(timeCurrent, UI.STATUS_OK, timeCurrent + uploadDelay, numUploads)
                         LOGGER.log_info(f"Uploaded: TEMP: {round(tempComp, ioRounding)} - PRESS: {round(pressRaw, ioRounding)} - HUMID: {round(humidRaw, ioRounding)}")
 
                     finally:
@@ -505,39 +612,42 @@ def main(cliArgs=None):
                         exitNow = ((maxUploads > 0) and (numUploads >= maxUploads))
                         screen.update_action(UI.STATUS_LBL_WAIT)
 
-                # Update terminal as needed
-                screen.update_data([
-                    senseData.temperature.as_dict(),
-                    senseData.pressure.as_dict(),
-                    senseData.humidity.as_dict(),
-                ])
+                # Update data set and display to terminal as needed
+                senseData.temperature.data.append(tempComp)
+                senseData.pressure.data.append(pressRaw)
+                senseData.humidity.data.append(humidRaw)
+                screen.update_data(prep_data_for_screen(senseData.as_dict()))
 
                 # Check display mode. Each mode corresponds to a data type
                 if SENSE_HAT.displMode == const.IDX_TEMP:           # type = "temperature"
-                    senseData.temperature.data.append(tempComp)
                     SENSE_HAT.display_as_graph(senseData.temperature.as_dict())
 
                 elif SENSE_HAT.displMode == const.IDX_PRESS:        # type = "pressure"
-                    senseData.pressure.data.append(pressRaw)
                     SENSE_HAT.display_as_graph(senseData.pressure.as_dict())
 
                 elif SENSE_HAT.displMode == const.IDX_HUMID:        # type = "humidity"
-                    senseData.humidity.data.append(humidRaw)
                     SENSE_HAT.display_as_graph(senseData.humidity.as_dict())
                         
                 else:                                               # Display sparkles
                     SENSE_HAT.display_sparkle()
 
-                # Are we done?
-                if not exitNow and ioWait >= APP_WAIT_MIN:
-                    time.sleep(APP_WAIT_1SEC)
-                    # If not, then lets update the progress bar as needed, and then rest
-                    # a bit before we go through this whole loop all over again ... phew!
-                    # cliProgress = init_progressbar()
-                    # with cliProgress:
-                    #     for _ in cliProgress.track(range(ioWait), description="Waiting for next sensor read ..."):
-                    #         SENSE_HAT.display_progress(timeSinceUpdate / uploadDelay)
-                    #         time.sleep(APP_WAIT_1SEC)
+                # Are we done? And do we have to wait a bit before next sensor read?
+                if not exitNow:
+                    # If we'tre not done and there's a substantial wait before we can 
+                    # read the sensors again, then lets display and update the progress 
+                    # bar as needed. Once the wait is done, we can go through this whole 
+                    # loop all over again ... phew!
+                    if ioWait > APP_MIN_PROG_WAIT:
+                        progress = screen.init_progressbar()
+                        task = progress.add_task("Waiting for sensors ...")
+                        screen.update_progress(progress)
+                        for i in range(ioWait):
+                            progress.update(task, completed = int(i / ioWait * 100))
+                            SENSE_HAT.display_progress(timeSinceUpdate / uploadDelay)
+                            time.sleep(APP_WAIT_1SEC)
+                    else:
+                        screen.update_action(UI.STATUS_LBL_WAIT)
+                        time.sleep(ioWait)
 
         except KeyboardInterrupt:
             exitNow = True
