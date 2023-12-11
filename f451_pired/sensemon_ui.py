@@ -113,7 +113,10 @@ def render_table(data=[], labelsOnly=False):
         data: 
             'list' of data rows, each with a specific data set render
         labelsOnly:
-            'bool' if 'True' that we only render labels and no data
+            'bool' if 'True' then we only render labels and no data
+
+    Returns:
+        'Table' with data
     """
 
     def _prep_currval_str(val, unit, color, valPrev = None, labelsOnly = False):
@@ -129,6 +132,21 @@ def render_table(data=[], labelsOnly=False):
         ---|--------|---
            |1,234.56|      <- Need min 8 char width for data values
            |    1.23|
+
+        Args:
+            val: 
+                value to be displayed
+            unit: 
+                'str' unit of measure
+            color: 
+                'str' with color definition
+            valPrev: 
+                prev. value so we can determine trend arrow
+            labelsOnly:
+                'bool' if 'True' then we do not generate 'current value' string
+
+        Returns:
+            'str' with formatted 'current value'
         """
         text = Text()
         dirChar = CHAR_DIR_DEF
@@ -149,7 +167,22 @@ def render_table(data=[], labelsOnly=False):
         return text
 
     def _prep_sparkline_str(vals, colors, labelsOnly):
-        """Prep sparkline graph string"""
+        """Prep sparkline graph string
+        
+        NOTE: it seems we cannot use 'termcolors' with sparklines as it 
+              somehow clashes with 'rich'
+
+        Args:
+            vals:
+                data for sparkline
+            colors:
+                color values to be applied -- DO NOT USE!
+            labelsOnly:
+                'bool' if 'True' then we do not generate sparkline
+
+        Returns:
+            'str' with sparkline
+        """
         return "" if (labelsOnly or not vals) else sparklines(vals, num_lines = 1, minimum = 0, maximum = 8)[-1]
 
     # Build a table
@@ -191,7 +224,8 @@ class SenseMonUI:
         self.statusLblNext = STATUS_LBL_NEXT
         self.statusLblLast = STATUS_LBL_LAST
         self.statusLblTotUpld = STATUS_LBL_TOT_UPLD
-        self.statusLblAction = STATUS_LBL_WAIT
+        self.statusStatus = None
+        self.statusProgress = None
 
     @property
     def is_dual_col(self):
@@ -219,14 +253,24 @@ class SenseMonUI:
             )
     
     @staticmethod
-    def init_progressbar(refreshRate=2):
+    def init_progressbar(console, refreshRate=2):
         """Initialize new progress bar."""
         return Progress(                     
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
-            transient=True,
-            refresh_per_second=refreshRate
+            console = console,
+            transient = True,
+            refresh_per_second = refreshRate
+        )
+
+    @staticmethod
+    def init_statusbar(console, msg=None):
+        msg = msg if msg is not None else STATUS_LBL_WAIT
+        return Status(
+            msg,
+            console = console,
+            spinner = 'dots'
         )
 
     def initialize(self, appNameLong, appNameShort, appVer, dataRows, enable=True):
@@ -292,6 +336,9 @@ class SenseMonUI:
         layout["footer"].update(render_footer(logo.plain, conWidth))
 
         # Updating properties for this object ... and then we're done
+        self.statusStatus = SenseMonUI.init_statusbar(console)
+        self.statusProgress = SenseMonUI.init_progressbar(console)
+
         self._console = console
         self._layout = layout
         self._conWidth = conWidth
@@ -333,10 +380,11 @@ class SenseMonUI:
             self.update_upload_last(lastTime, lastStatus)
             self.update_upload_num(numUploads)
 
-    def update_action(self, actMsg=None):
+    def update_action(self, scrnObj, actMsg=None):
         if self._active:
             msgStr = actMsg if actMsg else self.statusLblAction
             self._layout["actCurrent"].update(Status(msgStr))
+            self._layout.refresh_screen(self._console, "actCurrent")
 
     def update_progress(self, progress=None):
         if self._active and progress is not None:

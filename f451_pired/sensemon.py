@@ -234,8 +234,14 @@ def prep_data_for_screen(inData, labelsOnly=False):
     # for displaying all necessary data in the terminal.
     for key, row in inData.items():
         if key in APP_DATA_TYPES:
+            # Process and map sensor data against sparkline num range
             sparkData = list(row['data']) if labelsOnly else _process_spark_data(row['data'], row['valid'])
-            sparkColors = [] if labelsOnly else _process_spark_limits(row['limits'], row['valid'])
+
+            # Seems we cannot use this yet as 'termcolors' clashes with 'rich'
+            # sparkColors = [] if labelsOnly else _process_spark_limits(row['limits'], row['valid'])
+            sparkColors = []
+
+            # Define color for data point
             dataPtColor = "" if labelsOnly else _process_data_limits(row['data'][-1], row['valid'], row['limits'])
 
             outData.append({
@@ -646,7 +652,8 @@ def main(cliArgs=None):
                             SENSE_HAT.display_progress(timeSinceUpdate / uploadDelay)
                             time.sleep(APP_WAIT_1SEC)
                     else:
-                        screen.update_action(UI.STATUS_LBL_WAIT)
+                        # screen.update_action(UI.STATUS_LBL_WAIT)
+                        # screen.update_action("TEST 1-2-3")
                         time.sleep(ioWait)
 
         except KeyboardInterrupt:
