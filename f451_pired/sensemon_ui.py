@@ -13,7 +13,6 @@ Dependencies:
 """
 
 import time
-import random
 
 from rich import box
 from rich.console import Console
@@ -34,9 +33,9 @@ import f451_sensehat.sensehat_data as f451SenseData
 # =========================================================
 #              M I S C .   C O N S T A N T S
 # =========================================================
-APP_1COL_MIN_WIDTH = 40                 # Min width (in chars) for 1col terminal layout
-APP_2COL_MIN_WIDTH = 80                 # Min width (in chars) for 2col terminal layout
-APP_MIN_CLI_HEIGHT = 10                 # Min terminal window height (in rows)
+APP_1COL_MIN_WIDTH = 40  # Min width (in chars) for 1col terminal layout
+APP_2COL_MIN_WIDTH = 80  # Min width (in chars) for 2col terminal layout
+APP_MIN_CLI_HEIGHT = 10  # Min terminal window height (in rows)
 
 STATUS_OK = 200
 
@@ -48,24 +47,26 @@ STATUS_LBL_INIT = "Initializing ..."
 STATUS_LBL_UPLD = "Uploading ..."
 
 HDR_STATUS = "Uploads"
-VAL_BLANK_STR = "--"                    # Use for 'blank' value
+VAL_BLANK_STR = "--"  # Use for 'blank' value
 
-COLOR_DEF = "grey"                      # Default color
+COLOR_DEF = "grey"  # Default color
 COLOR_OK = "green"
 COLOR_ERROR = "bold red"
 
-CHAR_DIR_UP = '↑'                       # UP arrow to indicate increase
-CHAR_DIR_EQ = '↔︎'                       # SIDEWAYS arrow to little/no change
-CHAR_DIR_DWN = '↓'                      # DOWN arrow to indicate decline
-CHAR_DIR_DEF = ' '                      # 'blank' to indicate unknown change
+CHAR_DIR_UP = "↑"  # UP arrow to indicate increase
+CHAR_DIR_EQ = "↔︎"  # SIDEWAYS arrow to little/no change
+CHAR_DIR_DWN = "↓"  # DOWN arrow to indicate decline
+CHAR_DIR_DEF = " "  # 'blank' to indicate unknown change
 
-DELTA_FACTOR = 0.02                     # Any change with X% is considered negligable
+DELTA_FACTOR = 0.02  # Any change with X% is considered negligable
+
 
 # =========================================================
 #    H E L P E R   C L A S S E S   &   F U N C T I O N S
 # =========================================================
 class Logo:
     """Renders fancy logo."""
+
     def __init__(self, width, namePlain, nameRender, verNum):
         self._render = f451Common.make_logo(width, nameRender, f"v{verNum}")
         self._plain = f"{namePlain} - v{verNum}"
@@ -74,7 +75,7 @@ class Logo:
     def rows(self):
         return max(self._render.count("\n"), 1) if self._render else 1
 
-    @property    
+    @property
     def plain(self):
         return self._plain
 
@@ -83,7 +84,7 @@ class Logo:
 
     def __str__(self):
         return self._plain
-    
+
     def __repr__(self):
         return f"{type(self.__name__)}(plain={self._plain!r})"
 
@@ -105,12 +106,12 @@ def render_footer(appName, conWidth):
 
 def render_table(data=[], labelsOnly=False):
     """Make a new table
-    
+
     This is a beefy function and (re-)renders the whole table
     on each update so that we get that real-time update feel.
 
     Args:
-        data: 
+        data:
             'list' of data rows, each with a specific data set render
         labelsOnly:
             'bool' if 'True' then we only render labels and no data
@@ -119,14 +120,14 @@ def render_table(data=[], labelsOnly=False):
         'Table' with data
     """
 
-    def _prep_currval_str(val, unit, color, valPrev = None, labelsOnly = False):
+    def _prep_currval_str(val, unit, color, valPrev=None, labelsOnly=False):
         """Prep string for displaying current/last data point
 
-        This is a formatted string with a data value and unit of 
-        measure. The largest value will be 4 digits + 2 decimals. 
-        We also want values to be right-justfied and align on the 
+        This is a formatted string with a data value and unit of
+        measure. The largest value will be 4 digits + 2 decimals.
+        We also want values to be right-justfied and align on the
         decimal point.
-        
+
         -->|        |<--
            |12345678|
         ---|--------|---
@@ -134,13 +135,13 @@ def render_table(data=[], labelsOnly=False):
            |    1.23|
 
         Args:
-            val: 
+            val:
                 value to be displayed
-            unit: 
+            unit:
                 'str' unit of measure
-            color: 
+            color:
                 'str' with color definition
-            valPrev: 
+            valPrev:
                 prev. value so we can determine trend arrow
             labelsOnly:
                 'bool' if 'True' then we do not generate 'current value' string
@@ -168,8 +169,8 @@ def render_table(data=[], labelsOnly=False):
 
     def _prep_sparkline_str(vals, colors, labelsOnly):
         """Prep sparkline graph string
-        
-        NOTE: it seems we cannot use 'termcolors' with sparklines as it 
+
+        NOTE: it seems we cannot use 'termcolors' with sparklines as it
               somehow clashes with 'rich'
 
         Args:
@@ -183,26 +184,59 @@ def render_table(data=[], labelsOnly=False):
         Returns:
             'str' with sparkline
         """
-        return "" if (labelsOnly or not vals) else sparklines(vals, num_lines = 1, minimum = 0, maximum = 8)[-1]
+        return (
+            ""
+            if (labelsOnly or not vals)
+            else sparklines(vals, num_lines=1, minimum=0, maximum=8)[-1]
+        )
 
     # Build a table
-    table = Table(show_header = True, show_footer = False, show_edge = True, show_lines = True, expand = True, box = box.SQUARE_DOUBLE_HEAD)
-    table.add_column(Text("Description", justify = "center"), ratio = 1, width = 12, no_wrap = True, overflow = '')
-    table.add_column(Text("Current", justify = "center"), ratio = 1, width = 16, no_wrap = True, overflow = '')
-    table.add_column(Text("History", justify = "center"), ratio = 4, min_width = 12, no_wrap = True, overflow = '')
+    table = Table(
+        show_header=True,
+        show_footer=False,
+        show_edge=True,
+        show_lines=True,
+        expand=True,
+        box=box.SQUARE_DOUBLE_HEAD,
+    )
+    table.add_column(
+        Text("Description", justify="center"),
+        ratio=1,
+        width=12,
+        no_wrap=True,
+        overflow="",
+    )
+    table.add_column(
+        Text("Current", justify="center"), ratio=1, width=16, no_wrap=True, overflow=""
+    )
+    table.add_column(
+        Text("History", justify="center"),
+        ratio=4,
+        min_width=12,
+        no_wrap=True,
+        overflow="",
+    )
 
     # Render rows with/without data
     if data:
         for row in data:
             table.add_row(
-                row["label"], 
-                _prep_currval_str(row['dataPt'], row['unit'], row['dataPtColor'], row['dataPtPrev'], labelsOnly),
-                _prep_sparkline_str(row['sparkData'][-40:], row['sparkColors'], labelsOnly)
+                row["label"],
+                _prep_currval_str(
+                    row["dataPt"],
+                    row["unit"],
+                    row["dataPtColor"],
+                    row["dataPtPrev"],
+                    labelsOnly,
+                ),
+                _prep_sparkline_str(
+                    row["sparkData"][-40:], row["sparkColors"], labelsOnly
+                ),
             )
     else:
-        table.add_row('', '', '')
-        table.add_row('', '', '')
-        table.add_row('', '', '')
+        table.add_row("", "", "")
+        table.add_row("", "", "")
+        table.add_row("", "", "")
 
     return table
 
@@ -218,8 +252,8 @@ class SenseMonUI:
         self._conHeight = 0
         self._active = False
         self.logo = None
-        self.show24h = False        # Show 24-hour time?
-        self.showLocal = True       # Show local time?
+        self.show24h = False  # Show 24-hour time?
+        self.showLocal = True  # Show local time?
         self.statusHdr = HDR_STATUS
         self.statusLblNext = STATUS_LBL_NEXT
         self.statusLblLast = STATUS_LBL_LAST
@@ -229,7 +263,7 @@ class SenseMonUI:
 
     @property
     def is_dual_col(self):
-        return (self._conWidth >= APP_2COL_MIN_WIDTH)
+        return self._conWidth >= APP_2COL_MIN_WIDTH
 
     @property
     def is_active(self):
@@ -248,30 +282,25 @@ class SenseMonUI:
     def _make_time_str(self, t):
         timeFmtStr = "%H:%M:%S" if self.show24h else "%I:%M:%S %p"
         return time.strftime(
-                timeFmtStr, 
-                time.localtime(t) if self.showLocal else time.gmtime(t)
-            )
-    
+            timeFmtStr, time.localtime(t) if self.showLocal else time.gmtime(t)
+        )
+
     @staticmethod
     def init_progressbar(console, refreshRate=2):
         """Initialize new progress bar."""
-        return Progress(                     
+        return Progress(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
-            console = console,
-            transient = True,
-            refresh_per_second = refreshRate
+            console=console,
+            transient=True,
+            refresh_per_second=refreshRate,
         )
 
     @staticmethod
     def init_statusbar(console, msg=None):
         msg = msg if msg is not None else STATUS_LBL_WAIT
-        return Status(
-            msg,
-            console = console,
-            spinner = 'dots'
-        )
+        return Status(msg, console=console, spinner="dots")
 
     def initialize(self, appNameLong, appNameShort, appVer, dataRows, enable=True):
         console = Console()
@@ -280,50 +309,53 @@ class SenseMonUI:
         conWidth, conHeight = console.size
         logo = Logo(
             int(conWidth * 2 / 3) if (conWidth >= APP_2COL_MIN_WIDTH) else conWidth,
-            appNameLong, 
-            appNameShort, 
-            appVer
+            appNameLong,
+            appNameShort,
+            appVer,
         )
 
-        # Is the terminal window big enough to hold the layout? Or does 
+        # Is the terminal window big enough to hold the layout? Or does
         # user not want UI? If not, then we're done.
-        if not enable or conWidth < APP_1COL_MIN_WIDTH or conHeight < APP_MIN_CLI_HEIGHT:
+        if (
+            not enable
+            or conWidth < APP_1COL_MIN_WIDTH
+            or conHeight < APP_MIN_CLI_HEIGHT
+        ):
             return
-        
-        # If terminal window is wide enough, then split header 
+
+        # If terminal window is wide enough, then split header
         # row and show fancy logo ...
-        if (conWidth >= APP_2COL_MIN_WIDTH):
+        if conWidth >= APP_2COL_MIN_WIDTH:
             layout.split(
-                Layout(name="header", size = logo.rows + 1),
-                Layout(name="main", size = 9),
+                Layout(name="header", size=logo.rows + 1),
+                Layout(name="main", size=9),
                 Layout(name="footer"),
             )
             layout["header"].split_row(
-                Layout(name="logo", ratio = 2), 
-                Layout(name="action")
+                Layout(name="logo", ratio=2), Layout(name="action")
             )
-        # ... else stack all panels without fancy logo       
+        # ... else stack all panels without fancy logo
         else:
             layout.split(
-                Layout(name="logo", size = logo.rows + 1, visible = (logo.rows > 1)), 
-                Layout(name="action", size = 5),
-                Layout(name="main", size = 9),
+                Layout(name="logo", size=logo.rows + 1, visible=(logo.rows > 1)),
+                Layout(name="action", size=5),
+                Layout(name="main", size=9),
                 Layout(name="footer"),
             )
 
         layout["action"].split(
-            Layout(name="actHdr", size = 1),
-            Layout(name="actNextUpld", size = 1),
-            Layout(name="actLastUpld", size = 1),
-            Layout(name="actNumUpld", size = 1),
-            Layout(name="actCurrent", size = 1),
+            Layout(name="actHdr", size=1),
+            Layout(name="actNextUpld", size=1),
+            Layout(name="actLastUpld", size=1),
+            Layout(name="actNumUpld", size=1),
+            Layout(name="actCurrent", size=1),
         )
 
         # Display fancy logo
         if logo.rows > 1:
             layout["logo"].update(logo)
 
-        layout["actHdr"].update(Rule(title=self.statusHdr, style = COLOR_DEF, end = ''))
+        layout["actHdr"].update(Rule(title=self.statusHdr, style=COLOR_DEF, end=""))
         layout["actNextUpld"].update(Text(f"{self.statusLblNext}--:--:--"))
         layout["actLastUpld"].update(Text(f"{self.statusLblLast}--:--:--"))
         layout["actNumUpld"].update(Text(f"{self.statusLblTotUpld}-"))
@@ -365,13 +397,15 @@ class SenseMonUI:
     def update_upload_last(self, lastTime, lastStatus=STATUS_OK):
         if self._active:
             text = Text()
-            text.append(f"{self.statusLblLast}{self._make_time_str(lastTime)} ", style = COLOR_DEF)
+            text.append(
+                f"{self.statusLblLast}{self._make_time_str(lastTime)} ", style=COLOR_DEF
+            )
 
             if lastStatus == STATUS_OK:
                 text.append("[OK]", COLOR_OK)
             else:
                 text.append("[Error]", COLOR_ERROR)
-            
+
             self._layout["actLastUpld"].update(text)
 
     def update_upload_status(self, lastTime, lastStatus, nextTime, numUploads):
