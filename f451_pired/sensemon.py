@@ -37,7 +37,6 @@ import argparse
 import time
 import sys
 import asyncio
-import random
 
 from pathlib import Path
 from datetime import datetime
@@ -64,11 +63,11 @@ from Adafruit_IO import RequestError, ThrottlingError
 # =========================================================
 install_rich_traceback(show_locals=True)
 
-APP_VERSION = "0.0.1"
-APP_NAME = "f451 Labs piRED - SenseMon"
-APP_NAME_SHORT = "SenseMon"
-APP_LOG = "f451-pired-sensemon.log"     # Individual logs for devices with multiple apps
-APP_SETTINGS = "settings.toml"          # Standard for all f451 Labs projects
+APP_VERSION = '0.0.1'
+APP_NAME = 'f451 Labs piRED - SenseMon'
+APP_NAME_SHORT = 'SenseMon'
+APP_LOG = 'f451-pired-sensemon.log'     # Individual logs for devices with multiple apps
+APP_SETTINGS = 'settings.toml'          # Standard for all f451 Labs projects
 APP_DIR = Path(__file__).parent         # Find dir for this app
 
 APP_MIN_SENSOR_READ_WAIT = 1            # Min wait in sec between sensor reads
@@ -76,11 +75,11 @@ APP_MIN_PROG_WAIT = 5                   # Remaining min wait time to display pro
 APP_WAIT_1SEC = 1
 APP_MAX_DATA = 120                      # Max number of data points in the queue
 
-APP_DATA_TYPES = ["temperature", "pressure", "humidity"]
+APP_DATA_TYPES = ['temperature', 'pressure', 'humidity']
 
 APP_DISPLAY_MODES = {
-    f451SenseHat.KWD_DISPLAY_MIN: const.MAX_DISPL, 
-    f451SenseHat.KWD_DISPLAY_MAX: const.MIN_DISPL
+    f451SenseHat.KWD_DISPLAY_MIN: const.MAX_DISPL,
+    f451SenseHat.KWD_DISPLAY_MAX: const.MIN_DISPL,
 }
 
 # Load settings
@@ -101,12 +100,12 @@ try:
     FEED_HUMID = UPLOADER.aio_feed_info(CONFIG.get(const.KWD_FEED_HUMID, None))
 
 except RequestError as e:
-    LOGGER.log_error(f"Application terminated due to REQUEST ERROR: {e}")
+    LOGGER.log_error(f'Application terminated due to REQUEST ERROR: {e}')
     sys.exit(1)
 
 # We use these timers to track when to upload data and/or set
-# display to sleep mode. Normally we'd want them to be local vars 
-# inside 'main()'. However, since we need them reset them in the 
+# display to sleep mode. Normally we'd want them to be local vars
+# inside 'main()'. However, since we need them reset them in the
 # button actions, they need to be global.
 timeUpdate = time.time()
 displayUpdate = timeUpdate
@@ -119,45 +118,49 @@ def debug_config_info(cliArgs, console=None):
     """Print/log some basic debug info."""
 
     if console:
-        console.rule("Config Settings", style="grey", align="center")
-    else:    
-        LOGGER.log_debug("-- Config Settings --")
+        console.rule('Config Settings', style='grey', align='center')
+    else:
+        LOGGER.log_debug('-- Config Settings --')
 
-    LOGGER.log_debug(f"DISPL ROT:   {SENSE_HAT.displRotation}")
-    LOGGER.log_debug(f"DISPL MODE:  {SENSE_HAT.displMode}")
-    LOGGER.log_debug(f"DISPL PROGR: {SENSE_HAT.displProgress}")
-    LOGGER.log_debug(f"SLEEP TIME:  {SENSE_HAT.displSleepTime}")
-    LOGGER.log_debug(f"SLEEP MODE:  {SENSE_HAT.displSleepMode}")
-    LOGGER.log_debug(f"IO DEL:      {CONFIG.get(const.KWD_DELAY, const.DEF_DELAY)}")
-    LOGGER.log_debug(f"IO WAIT:     {CONFIG.get(const.KWD_WAIT, const.DEF_WAIT)}")
-    LOGGER.log_debug(f"IO THROTTLE: {CONFIG.get(const.KWD_THROTTLE, const.DEF_THROTTLE)}")
+    LOGGER.log_debug(f'DISPL ROT:   {SENSE_HAT.displRotation}')
+    LOGGER.log_debug(f'DISPL MODE:  {SENSE_HAT.displMode}')
+    LOGGER.log_debug(f'DISPL PROGR: {SENSE_HAT.displProgress}')
+    LOGGER.log_debug(f'SLEEP TIME:  {SENSE_HAT.displSleepTime}')
+    LOGGER.log_debug(f'SLEEP MODE:  {SENSE_HAT.displSleepMode}')
+    LOGGER.log_debug(f'IO DEL:      {CONFIG.get(const.KWD_DELAY, const.DEF_DELAY)}')
+    LOGGER.log_debug(f'IO WAIT:     {CONFIG.get(const.KWD_WAIT, const.DEF_WAIT)}')
+    LOGGER.log_debug(f'IO THROTTLE: {CONFIG.get(const.KWD_THROTTLE, const.DEF_THROTTLE)}')
 
-    LOGGER.log_debug(f"TEMP COMP:   {CONFIG.get(f451Common.KWD_TEMP_COMP, f451Common.DEF_TEMP_COMP_FACTOR)}")
+    LOGGER.log_debug(
+        f'TEMP COMP:   {CONFIG.get(f451Common.KWD_TEMP_COMP, f451Common.DEF_TEMP_COMP_FACTOR)}'
+    )
 
     # Display Raspberry Pi serial and Wi-Fi status
-    LOGGER.log_debug(f"Raspberry Pi serial: {f451Common.get_RPI_serial_num()}")
-    LOGGER.log_debug(f"Wi-Fi: {(f451Common.STATUS_YES if f451Common.check_wifi() else f451Common.STATUS_UNKNOWN)}")
+    LOGGER.log_debug(f'Raspberry Pi serial: {f451Common.get_RPI_serial_num()}')
+    LOGGER.log_debug(
+        f'Wi-Fi: {(f451Common.STATUS_YES if f451Common.check_wifi() else f451Common.STATUS_UNKNOWN)}'
+    )
 
     # Display CLI args
-    LOGGER.log_debug(f"CLI Args:\n{cliArgs}")
+    LOGGER.log_debug(f'CLI Args:\n{cliArgs}')
 
 
 def prep_data_for_screen(inData, labelsOnly=False):
     """Prep data for display in terminal
-    
-    We only display temperature, humidity, and pressure, and we 
+
+    We only display temperature, humidity, and pressure, and we
     need to normalize all data to fit within the 1-8 range. We
-    can use 0 for missing values and for values that fall outside the 
+    can use 0 for missing values and for values that fall outside the
     valid range for the Sense HAT, which we'll assume are erroneous.
 
-    NOTE: We need to map the data sets agains a numeric range of 1-8 so 
+    NOTE: We need to map the data sets agains a numeric range of 1-8 so
           that we can display them as sparkline graphs in the terminal.
 
     NOTE: We're using the 'limits' list to color the values, which means
           we need to create a special 'coloring' set for the sparkline
           graphs using converted limit values.
 
-          The limits list has 4 values (see also 'SenseData' class) and 
+          The limits list has 4 values (see also 'SenseData' class) and
           we need to map them to colors:
 
           Limit set [A, B, C, D] means:
@@ -167,19 +170,19 @@ def prep_data_for_screen(inData, labelsOnly=False):
                 C < value < D  -> High               = "cyan"
                     value > D  -> Dangerously High   = "blue"
 
-          Note that the Sparkline library has a specific syntax for 
+          Note that the Sparkline library has a specific syntax for
           limits and colors:
 
             "<name of color>:<gt|eq|lt>:<value>"
 
           Also, we only care about 'low', 'normal', and 'high'
-             
+
     Args:
         inData: 'dict' with Sense HAT data
-    
+
     Returns:
-        'list' with processed data and only with data rows (i.e. temp, 
-        humidity, pressure) and columns (i.e. label, last data pt, and 
+        'list' with processed data and only with data rows (i.e. temp,
+        humidity, pressure) and columns (i.e. label, last data pt, and
         sparkline) that we want to display. Each row in the list is
         designed for display in the terminal.
     """
@@ -187,12 +190,12 @@ def prep_data_for_screen(inData, labelsOnly=False):
 
     def _convert_value(val, valid, inMinMax, force=False):
         """Map a given value against a range for sparklines
-        
-        We need convert our data points from the sensor reads to 
+
+        We need convert our data points from the sensor reads to
         something that we can use with sparklines. This means we'll
         clean up and/or clamp values as needed.
-        
-        We default to 'None' unless we want to 'force' clamping 
+
+        We default to 'None' unless we want to 'force' clamping
         for out-of-bound values.
         """
         outVal = 0 if force else None
@@ -211,12 +214,12 @@ def prep_data_for_screen(inData, labelsOnly=False):
         """Create color mapping for sparkline graphs"""
         processed = [_convert_value(i, valid, (min(data), max(data)), True) for i in data]
         return [
-            f"{f451SenseData.COLOR_MAP[f451SenseData.COLOR_LOW]}:lt:{round(processed[1], 1)}",   # Low
-            f"{f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM]}:lt:{round(processed[2], 1)}",  # Normal
-            f"{f451SenseData.COLOR_MAP[f451SenseData.COLOR_HIGH]}:gt:{round(processed[2], 1)}",  # High
+            f'{f451SenseData.COLOR_MAP[f451SenseData.COLOR_LOW]}:lt:{round(processed[1], 1)}',   # Low    # type: ignore
+            f'{f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM]}:lt:{round(processed[2], 1)}',  # Normal # type: ignore
+            f'{f451SenseData.COLOR_MAP[f451SenseData.COLOR_HIGH]}:gt:{round(processed[2], 1)}',  # High   # type: ignore
         ]
-        
-    def _process_data_limits(val, valid, limits, default=""):
+
+    def _process_data_limits(val, valid, limits, default=''):
         """Determine color mapping for specific value"""
         color = default
 
@@ -227,7 +230,7 @@ def prep_data_for_screen(inData, labelsOnly=False):
                 color = f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM]
             else:
                 color = f451SenseData.COLOR_MAP[f451SenseData.COLOR_HIGH]
-        
+
         return color
 
     # Process each data row and create a new data structure that we can use
@@ -235,25 +238,33 @@ def prep_data_for_screen(inData, labelsOnly=False):
     for key, row in inData.items():
         if key in APP_DATA_TYPES:
             # Process and map sensor data against sparkline num range
-            sparkData = list(row['data']) if labelsOnly else _process_spark_data(row['data'], row['valid'])
+            sparkData = (
+                list(row['data']) if labelsOnly else _process_spark_data(row['data'], row['valid'])
+            )
 
             # Seems we cannot use this yet as 'termcolors' clashes with 'rich'
             # sparkColors = [] if labelsOnly else _process_spark_limits(row['limits'], row['valid'])
             sparkColors = []
 
             # Define color for data point
-            dataPtColor = "" if labelsOnly else _process_data_limits(row['data'][-1], row['valid'], row['limits'])
+            dataPtColor = (
+                ''
+                if labelsOnly
+                else _process_data_limits(row['data'][-1], row['valid'], row['limits'])
+            )
 
-            outData.append({
-                'sparkData': sparkData,
-                'sparkColors': sparkColors,
-                'dataPt': row['data'][-1],
-                'dataPtPrev': row['data'][-2],
-                'dataPtColor': dataPtColor,
-                'dataLimits': row['limits'],
-                'unit': row['unit'],
-                'label': row['label']
-            })
+            outData.append(
+                {
+                    'sparkData': sparkData,
+                    'sparkColors': sparkColors,
+                    'dataPt': row['data'][-1],
+                    'dataPtPrev': row['data'][-2],
+                    'dataPtColor': dataPtColor,
+                    'dataLimits': row['limits'],
+                    'unit': row['unit'],
+                    'label': row['label'],
+                }
+            )
 
     return outData
 
@@ -269,63 +280,58 @@ def init_cli_parser():
     """
     parser = argparse.ArgumentParser(
         prog=APP_NAME,
-        description=f"{APP_NAME} [v{APP_VERSION}] - read sensor data from Sense HAT and upload to Adafruit IO and/or Arduino Cloud.",
-        epilog="NOTE: This application requires active accounts with corresponding cloud services.",
+        description=f'{APP_NAME} [v{APP_VERSION}] - read sensor data from Sense HAT and upload to Adafruit IO and/or Arduino Cloud.',
+        epilog='NOTE: This application requires active accounts with corresponding cloud services.',
     )
 
     parser.add_argument(
-        "-V",
-        "--version",
-        action="store_true",
-        help="display script version number and exit",
+        '-V',
+        '--version',
+        action='store_true',
+        help='display script version number and exit',
+    )
+    parser.add_argument('-d', '--debug', action='store_true', help='run script in debug mode')
+    parser.add_argument(
+        '--cron',
+        action='store_true',
+        help='use when running as cron job - run script once and exit',
     )
     parser.add_argument(
-        "-d",
-        "--debug", 
-        action="store_true", 
-        help="run script in debug mode"
-    )
-    parser.add_argument(
-        "--cron",
-        action="store_true",
-        help="use when running as cron job - run script once and exit",
-    )
-    parser.add_argument(
-        "--noCLI",
-        action="store_true",
+        '--noCLI',
+        action='store_true',
         default=False,
-        help="do not display output on CLI",
+        help='do not display output on CLI',
     )
     parser.add_argument(
-        "--noLED",
-        action="store_true",
+        '--noLED',
+        action='store_true',
         default=False,
-        help="do not display output on LED",
+        help='do not display output on LED',
     )
     parser.add_argument(
-        "--progress",
-        action="store_true",
-        help="show upload progress bar on LED",
+        '--progress',
+        action='store_true',
+        help='show upload progress bar on LED',
     )
     parser.add_argument(
-        "--log",
-        action="store",
+        '--log',
+        action='store',
         type=str,
-        help="name of log file",
+        help='name of log file',
     )
     parser.add_argument(
-        "--uploads",
-        action="store",
+        '--uploads',
+        action='store',
         type=int,
         default=-1,
-        help="number of uploads before exiting",
+        help='number of uploads before exiting',
     )
     parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
+        '-v',
+        '--verbose',
+        action='store_true',
         default=False,
-        help="show output to CLI stdout",
+        help='show output to CLI stdout',
     )
 
     return parser
@@ -333,11 +339,11 @@ def init_cli_parser():
 
 async def upload_sensor_data(*args, **kwargs):
     """Send sensor data to cloud services.
-    
-    This helper function parses and sends enviro data to 
+
+    This helper function parses and sends enviro data to
     Adafruit IO and/or Arduino Cloud.
 
-    NOTE: This function will upload specific environment 
+    NOTE: This function will upload specific environment
           data using the following keywords:
 
           'temperature' - temperature data
@@ -351,7 +357,7 @@ async def upload_sensor_data(*args, **kwargs):
             User can provide individual data points as key-value pairs
     """
     # We combine 'args' and 'kwargs' to allow users to provide a 'dict' with
-    # all data points and/or individual data points (which could override 
+    # all data points and/or individual data points (which could override
     # values in the 'dict').
     data = {**args[0], **kwargs} if args and isinstance(args[0], dict) else kwargs
 
@@ -359,15 +365,15 @@ async def upload_sensor_data(*args, **kwargs):
 
     # Send temperature data ?
     if data.get(const.KWD_DATA_TEMPS, None) is not None:
-        sendQ.append(UPLOADER.aio_send_data(FEED_TEMPS.key, data.get(const.KWD_DATA_TEMPS)))
+        sendQ.append(UPLOADER.aio_send_data(FEED_TEMPS.key, data.get(const.KWD_DATA_TEMPS))) # type: ignore
 
     # Send barometric pressure data ?
     if data.get(const.KWD_DATA_PRESS, None) is not None:
-        sendQ.append(UPLOADER.aio_send_data(FEED_PRESS.key, data.get(const.KWD_DATA_PRESS)))
+        sendQ.append(UPLOADER.aio_send_data(FEED_PRESS.key, data.get(const.KWD_DATA_PRESS))) # type: ignore
 
     # Send humidity data ?
     if data.get(const.KWD_DATA_HUMID, None) is not None:
-        sendQ.append(UPLOADER.aio_send_data(FEED_HUMID.key, data.get(const.KWD_DATA_HUMID)))
+        sendQ.append(UPLOADER.aio_send_data(FEED_HUMID.key, data.get(const.KWD_DATA_HUMID))) # type: ignore
 
     # deviceID = SENSE_HAT.get_ID(DEF_ID_PREFIX)
 
@@ -376,7 +382,7 @@ async def upload_sensor_data(*args, **kwargs):
 
 def btn_up(event):
     """SenseHat Joystick UP event
-    
+
     Rotate display by -90 degrees and reset screen blanking
     """
     global displayUpdate
@@ -388,7 +394,7 @@ def btn_up(event):
 
 def btn_down(event):
     """SenseHat Joystick DOWN event
-    
+
     Rotate display by +90 degrees and reset screen blanking
     """
     global displayUpdate
@@ -400,7 +406,7 @@ def btn_down(event):
 
 def btn_left(event):
     """SenseHat Joystick LEFT event
-    
+
     Switch display mode by 1 mode and reset screen blanking
     """
     global displayUpdate
@@ -412,7 +418,7 @@ def btn_left(event):
 
 def btn_right(event):
     """SenseHat Joystick RIGHT event
-    
+
     Switch display mode by 1 mode and reset screen blanking
     """
     global displayUpdate
@@ -424,7 +430,7 @@ def btn_right(event):
 
 def btn_middle(event):
     """SenseHat Joystick MIDDLE (down) event
-    
+
     Turn display on/off
     """
     global displayUpdate
@@ -434,7 +440,7 @@ def btn_middle(event):
         if SENSE_HAT.displSleepMode:
             SENSE_HAT.update_sleep_mode(False)
             displayUpdate = time.time()
-        else:    
+        else:
             SENSE_HAT.update_sleep_mode(True)
 
 
@@ -460,8 +466,8 @@ def main(cliArgs=None):
      -  Application will exit with error level 1 if invalid Adafruit IO
         or Arduino Cloud feeds are provided
 
-     -  Application will exit with error level 0 if either no arguments 
-        are entered via CLI, or if arguments '-V' or '--version' are used. 
+     -  Application will exit with error level 0 if either no arguments
+        are entered via CLI, or if arguments '-V' or '--version' are used.
         No data will be uploaded will be sent in that case.
 
     Args:
@@ -476,22 +482,26 @@ def main(cliArgs=None):
     # Parse CLI args and show 'help' and exit if no args
     cli = init_cli_parser()
     cliArgs, _ = cli.parse_known_args(cliArgs)
-    if (not cliArgs and len(sys.argv) == 1):
+    if not cliArgs and len(sys.argv) == 1:
         cli.print_help(sys.stdout)
         sys.exit(0)
 
     if cliArgs.version:
-        print(f"{APP_NAME} (v{APP_VERSION})")
+        print(f'{APP_NAME} (v{APP_VERSION})')
         sys.exit(0)
 
-    # Initialize core data queues
+    # Initialize core data queues and related variables
     senseData = f451SenseData.SenseData(None, APP_MAX_DATA)
     tempCompFactor = CONFIG.get(f451Common.KWD_TEMP_COMP, f451Common.DEF_TEMP_COMP_FACTOR)
-    tempCompYN = (tempCompFactor > 0)  # If 0 (zero) then do not compensate for CPU temp
+    cpuTempsQMaxLen = CONFIG.get(f451Common.KWD_MAX_LEN_CPU_TEMPS, f451Common.MAX_LEN_CPU_TEMPS)
 
+    tempCompYN = tempCompFactor > 0  # If 0 (zero) then do not compensate for CPU temp
+
+    cpuTempsQ = []
     if tempCompYN:
-        cpuTempsQMaxLen = CONFIG.get(f451Common.KWD_MAX_LEN_CPU_TEMPS, f451Common.MAX_LEN_CPU_TEMPS)
-        cpuTempsQ = deque([SENSE_HAT.get_CPU_temp(False)] * cpuTempsQMaxLen, maxlen=cpuTempsQMaxLen)
+        cpuTempsQ = deque(
+            [SENSE_HAT.get_CPU_temp(False)] * cpuTempsQMaxLen, maxlen=cpuTempsQMaxLen
+        )
 
     # Initialize UI for terminal
     screen = UI.SenseMonUI()
@@ -499,8 +509,8 @@ def main(cliArgs=None):
         APP_NAME,
         APP_NAME_SHORT,
         APP_VERSION,
-        prep_data_for_screen(senseData.as_dict(), True), 
-        not cliArgs.noCLI
+        prep_data_for_screen(senseData.as_dict(), True),
+        not cliArgs.noCLI,
     )
 
     # Initialize Sense HAT joystick and LED display
@@ -509,7 +519,7 @@ def main(cliArgs=None):
     SENSE_HAT.update_sleep_mode(cliArgs.noLED)
 
     if cliArgs.progress:
-        SENSE_HAT.displProgress(True)
+        SENSE_HAT.displProgress = True
 
     # Get core settings
     ioFreq = CONFIG.get(const.KWD_FREQ, const.DEF_FREQ)
@@ -520,7 +530,7 @@ def main(cliArgs=None):
     ioUploadAndExit = cliArgs.cron
 
     logLvl = CONFIG.get(f451Logger.KWD_LOG_LEVEL, f451Logger.LOG_NOTSET)
-    debugMode = (logLvl == f451Logger.LOG_DEBUG)
+    debugMode = logLvl == f451Logger.LOG_DEBUG
 
     # Update log file or level?
     if cliArgs.debug:
@@ -538,7 +548,7 @@ def main(cliArgs=None):
     timeSinceUpdate = 0
     timeUpdate = time.time()
     displayUpdate = timeUpdate
-    uploadDelay = ioDelay       # Ensure that we do NOT upload first reading
+    uploadDelay = ioDelay  # Ensure that we do NOT upload first reading
     maxUploads = int(cliArgs.uploads)
     numUploads = 0
     exitNow = False
@@ -547,21 +557,20 @@ def main(cliArgs=None):
     screen.update_upload_next(timeUpdate + uploadDelay)
 
     # If log level <= INFO
-    LOGGER.log_info("-- START Data Logging --")
+    LOGGER.log_info('-- START Data Logging --')
 
-    with Live(screen.layout, screen=True, redirect_stderr=False) as live:
+    with Live(screen.layout, screen=True, redirect_stderr=False) as live:  # noqa: F841
         try:
             while not exitNow:
                 timeCurrent = time.time()
                 timeSinceUpdate = timeCurrent - timeUpdate
                 SENSE_HAT.update_sleep_mode(
-                    (timeCurrent - displayUpdate) > SENSE_HAT.displSleepTime,
-                    cliArgs.noLED
+                    (timeCurrent - displayUpdate) > SENSE_HAT.displSleepTime, cliArgs.noLED
                 )
 
                 # --- Get sensor data ---
                 #
-                screen.update_action("Reading sensors ...")
+                screen.update_action('Reading sensors ...')
 
                 # Get raw temp from sensor
                 tempRaw = tempComp = SENSE_HAT.get_temperature()
@@ -572,7 +581,7 @@ def main(cliArgs=None):
                     #
                     # NOTE: This feature relies on the 'vcgencmd' which is found on
                     #       RPIs. If this is not run on a RPI (e.g. during testing),
-                    #       then we need to neutralize the 'cpuTemp' compensation. 
+                    #       then we need to neutralize the 'cpuTemp' compensation.
                     cpuTempsQ.append(SENSE_HAT.get_CPU_temp(False))
                     cpuTempAvg = sum(cpuTempsQ) / float(cpuTempsQMaxLen)
 
@@ -587,35 +596,41 @@ def main(cliArgs=None):
 
                 # Is it time to upload data?
                 if timeSinceUpdate >= uploadDelay:
-                    screen.update_action("Uploading ...")
+                    screen.update_action('Uploading ...')
                     try:
-                        asyncio.run(upload_sensor_data(
-                            temperature = round(tempComp, ioRounding), 
-                            pressure = round(pressRaw, ioRounding), 
-                            humidity = round(humidRaw, ioRounding), 
-                            deviceID = f451Common.get_RPI_ID(f451Common.DEF_ID_PREFIX)
-                        ))
+                        asyncio.run(
+                            upload_sensor_data(
+                                temperature=round(tempComp, ioRounding),
+                                pressure=round(pressRaw, ioRounding),
+                                humidity=round(humidRaw, ioRounding),
+                                deviceID=f451Common.get_RPI_ID(f451Common.DEF_ID_PREFIX),
+                            )
+                        )
                         # time.sleep(5)
 
                     except RequestError as e:
-                        LOGGER.log_error(f"Application terminated: {e}")
+                        LOGGER.log_error(f'Application terminated: {e}')
                         sys.exit(1)
 
                     except ThrottlingError:
                         # Keep increasing 'ioDelay' each time we get a 'ThrottlingError'
                         uploadDelay += ioThrottle
-                        
+
                     else:
                         # Reset 'uploadDelay' back to normal 'ioFreq' on successful upload
                         numUploads += 1
                         uploadDelay = ioFreq
-                        exitNow = (exitNow or ioUploadAndExit)
-                        screen.update_upload_status(timeCurrent, UI.STATUS_OK, timeCurrent + uploadDelay, numUploads)
-                        LOGGER.log_info(f"Uploaded: TEMP: {round(tempComp, ioRounding)} - PRESS: {round(pressRaw, ioRounding)} - HUMID: {round(humidRaw, ioRounding)}")
+                        exitNow = exitNow or ioUploadAndExit
+                        screen.update_upload_status(
+                            timeCurrent, UI.STATUS_OK, timeCurrent + uploadDelay, numUploads
+                        )
+                        LOGGER.log_info(
+                            f'Uploaded: TEMP: {round(tempComp, ioRounding)} - PRESS: {round(pressRaw, ioRounding)} - HUMID: {round(humidRaw, ioRounding)}'
+                        )
 
                     finally:
                         timeUpdate = timeCurrent
-                        exitNow = ((maxUploads > 0) and (numUploads >= maxUploads))
+                        exitNow = (maxUploads > 0) and (numUploads >= maxUploads)
                         screen.update_action(UI.STATUS_LBL_WAIT)
 
                 # Update data set and display to terminal as needed
@@ -625,30 +640,30 @@ def main(cliArgs=None):
                 screen.update_data(prep_data_for_screen(senseData.as_dict()))
 
                 # Check display mode. Each mode corresponds to a data type
-                if SENSE_HAT.displMode == const.IDX_TEMP:           # type = "temperature"
+                if SENSE_HAT.displMode == const.IDX_TEMP:  # type = "temperature"
                     SENSE_HAT.display_as_graph(senseData.temperature.as_dict())
 
-                elif SENSE_HAT.displMode == const.IDX_PRESS:        # type = "pressure"
+                elif SENSE_HAT.displMode == const.IDX_PRESS:  # type = "pressure"
                     SENSE_HAT.display_as_graph(senseData.pressure.as_dict())
 
-                elif SENSE_HAT.displMode == const.IDX_HUMID:        # type = "humidity"
+                elif SENSE_HAT.displMode == const.IDX_HUMID:  # type = "humidity"
                     SENSE_HAT.display_as_graph(senseData.humidity.as_dict())
-                        
-                else:                                               # Display sparkles
+
+                else:  # Display sparkles
                     SENSE_HAT.display_sparkle()
 
                 # Are we done? And do we have to wait a bit before next sensor read?
                 if not exitNow:
-                    # If we'tre not done and there's a substantial wait before we can 
-                    # read the sensors again, then lets display and update the progress 
-                    # bar as needed. Once the wait is done, we can go through this whole 
+                    # If we'tre not done and there's a substantial wait before we can
+                    # read the sensors again, then lets display and update the progress
+                    # bar as needed. Once the wait is done, we can go through this whole
                     # loop all over again ... phew!
                     if ioWait > APP_MIN_PROG_WAIT:
                         progress = screen.init_progressbar()
-                        task = progress.add_task("Waiting for sensors ...")
+                        task = progress.add_task('Waiting for sensors ...')
                         screen.update_progress(progress)
                         for i in range(ioWait):
-                            progress.update(task, completed = int(i / ioWait * 100))
+                            progress.update(task, completed=int(i / ioWait * 100))
                             SENSE_HAT.display_progress(timeSinceUpdate / uploadDelay)
                             time.sleep(APP_WAIT_1SEC)
                     else:
@@ -660,20 +675,20 @@ def main(cliArgs=None):
             exitNow = True
 
     # If log level <= INFO
-    LOGGER.log_info("-- END Data Logging --")
+    LOGGER.log_info('-- END Data Logging --')
 
     # A bit of clean-up before we exit ...
     SENSE_HAT.display_reset()
     SENSE_HAT.display_off()
-    
+
     # ... and display summary info
-    print(f"Work end:    {(datetime.now()):%a %b %-d, %Y at %-I:%M:%S %p}")
-    print(f"Num uploads: {numUploads}")
+    print(f'Work end:    {(datetime.now()):%a %b %-d, %Y at %-I:%M:%S %p}')
+    print(f'Num uploads: {numUploads}')
     # console.rule(style="grey", align="center")
 
 
 # =========================================================
 #            G L O B A L   C A T C H - A L L
 # =========================================================
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()  # pragma: no cover

@@ -17,7 +17,6 @@ import time
 from rich import box
 from rich.console import Console
 from rich.layout import Layout
-from rich.live import Live
 from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn
 from rich.text import Text
 from rich.rule import Rule
@@ -80,13 +79,13 @@ class Logo:
         return self._plain
 
     def __rich__(self):
-        return Text(self._render, end="")
+        return Text(str(self._render), end = "")
 
     def __str__(self):
         return self._plain
 
     def __repr__(self):
-        return f"{type(self.__name__)}(plain={self._plain!r})"
+        return f"{type(self).__name__}(plain={self._plain!r})"
 
 
 def render_footer(appName, conWidth):
@@ -104,7 +103,7 @@ def render_footer(appName, conWidth):
     return footer
 
 
-def render_table(data=[], labelsOnly=False):
+def render_table(data, labelsOnly=False):
     """Make a new table
 
     This is a beefy function and (re-)renders the whole table
@@ -204,17 +203,17 @@ def render_table(data=[], labelsOnly=False):
         ratio=1,
         width=12,
         no_wrap=True,
-        overflow="",
+        overflow="crop",
     )
     table.add_column(
-        Text("Current", justify="center"), ratio=1, width=16, no_wrap=True, overflow=""
+        Text("Current", justify="center"), ratio=1, width=16, no_wrap=True, overflow="crop"
     )
     table.add_column(
-        Text("History", justify="center"),
+        Text("History", justify="center"), 
         ratio=4,
         min_width=12,
         no_wrap=True,
-        overflow="",
+        overflow="crop",
     )
 
     # Render rows with/without data
