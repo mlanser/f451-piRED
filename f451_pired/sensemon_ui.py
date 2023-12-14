@@ -32,39 +32,38 @@ import f451_sensehat.sensehat_data as f451SenseData
 # =========================================================
 #              M I S C .   C O N S T A N T S
 # =========================================================
-APP_1COL_MIN_WIDTH = 40  # Min width (in chars) for 1col terminal layout
-APP_2COL_MIN_WIDTH = 80  # Min width (in chars) for 2col terminal layout
-APP_MIN_CLI_HEIGHT = 10  # Min terminal window height (in rows)
+APP_1COL_MIN_WIDTH = 40     # Min width (in chars) for 1col terminal layout
+APP_2COL_MIN_WIDTH = 80     # Min width (in chars) for 2col terminal layout
+APP_MIN_CLI_HEIGHT = 10     # Min terminal window height (in rows)
 
 STATUS_OK = 200
 
-STATUS_LBL_NEXT = "Next:  "
-STATUS_LBL_LAST = "Last:  "
-STATUS_LBL_TOT_UPLD = "Total: "
-STATUS_LBL_WAIT = "Waiting ..."
-STATUS_LBL_INIT = "Initializing ..."
-STATUS_LBL_UPLD = "Uploading ..."
+STATUS_LBL_NEXT = 'Next:  '
+STATUS_LBL_LAST = 'Last:  '
+STATUS_LBL_TOT_UPLD = 'Total: '
+STATUS_LBL_WAIT = 'Waiting ...'
+STATUS_LBL_INIT = 'Initializing ...'
+STATUS_LBL_UPLD = 'Uploading ...'
 
-HDR_STATUS = "Uploads"
-VAL_BLANK_STR = "--"  # Use for 'blank' value
+HDR_STATUS = 'Uploads'
+VAL_BLANK_STR = '--'        # Use for 'blank' data
+VAL_ERROR_STR = 'Error'     # Use for invalid data
 
-COLOR_DEF = "grey"  # Default color
-COLOR_OK = "green"
-COLOR_ERROR = "bold red"
+COLOR_DEF = 'grey'          # Default color
+COLOR_OK = 'green'
+COLOR_ERROR = 'red'
 
-CHAR_DIR_UP = "↑"  # UP arrow to indicate increase
-CHAR_DIR_EQ = "↔︎"  # SIDEWAYS arrow to little/no change
-CHAR_DIR_DWN = "↓"  # DOWN arrow to indicate decline
-CHAR_DIR_DEF = " "  # 'blank' to indicate unknown change
-
-DELTA_FACTOR = 0.02  # Any change with X% is considered negligable
+CHAR_DIR_UP = '↑'           # UP arrow to indicate increase
+CHAR_DIR_EQ = '↔︎'           # SIDEWAYS arrow to little/no change
+CHAR_DIR_DWN = '↓'          # DOWN arrow to indicate decline
+CHAR_DIR_DEF = ' '          # 'blank' to indicate unknown change
 
 
 # =========================================================
 #    H E L P E R   C L A S S E S   &   F U N C T I O N S
 # =========================================================
 class Logo:
-    """Renders fancy logo."""
+    """Render fancy logo."""
 
     def __init__(self, width, namePlain, nameRender, verNum):
         self._render = f451Common.make_logo(width, nameRender, f"v{verNum}")
@@ -72,35 +71,20 @@ class Logo:
 
     @property
     def rows(self):
-        return max(self._render.count("\n"), 1) if self._render else 1
+        return max(self._render.count('\n'), 1) if self._render else 1
 
     @property
     def plain(self):
         return self._plain
 
     def __rich__(self):
-        return Text(str(self._render), end = "")
+        return Text(str(self._render), end='')
 
     def __str__(self):
         return self._plain
 
     def __repr__(self):
         return f"{type(self).__name__}(plain={self._plain!r})"
-
-
-def render_footer(appName, conWidth):
-    footer = Text()
-
-    # Assemble colorful legend
-    footer.append("  LOW ", f451SenseData.COLOR_MAP[f451SenseData.COLOR_LOW])
-    footer.append("NORMAL ", f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM])
-    footer.append("HIGH", f451SenseData.COLOR_MAP[f451SenseData.COLOR_HIGH])
-
-    # Add app name and version and push to the right
-    footer.append(appName.rjust(conWidth - len(str(footer)) - 2))
-    footer.end = ""
-
-    return footer
 
 
 def render_table(data, labelsOnly=False):
@@ -119,7 +103,7 @@ def render_table(data, labelsOnly=False):
         'Table' with data
     """
 
-    def _prep_currval_str(val, unit, color, valPrev=None, labelsOnly=False):
+    def _prep_currval_str(data, labelsOnly=False):
         """Prep string for displaying current/last data point
 
         This is a formatted string with a data value and unit of
@@ -133,61 +117,69 @@ def render_table(data, labelsOnly=False):
            |1,234.56|      <- Need min 8 char width for data values
            |    1.23|
 
+        NOTE: We display '--' if value is 'None' and status is 'ok' 
+              as that represents a 'missing' value. But we display 
+              'ERROR' if value is 'None' and status is not 'ok' as
+              that indicates an invalid value. Both cases are shown
+              as gaps in sparkline graph.   
+        
         Args:
-            val:
-                value to be displayed
-            unit:
-                'str' unit of measure
-            color:
-                'str' with color definition
-            valPrev:
-                prev. value so we can determine trend arrow
+            data:
+                'dict' with data point value and attributes
             labelsOnly:
                 'bool' if 'True' then we do not generate 'current value' string
 
         Returns:
-            'str' with formatted 'current value'
+            'Text' object with formatted 'current value'
         """
         text = Text()
         dirChar = CHAR_DIR_DEF
 
-        if labelsOnly or val is None:
-            text.append(f"{VAL_BLANK_STR} {unit}", COLOR_DEF)
+        if labelsOnly or (data['dataPt'] is None and data['dataPtOK']):
+            text.append(f"{dirChar} {VAL_BLANK_STR:>8} {data['unit']}", COLOR_DEF)
+        elif data['dataPt'] is None and not data['dataPtOK']:
+            text.append(f"{dirChar} {VAL_ERROR_STR:>8}", COLOR_ERROR)
         else:
-            if valPrev is not None:
-                if val > (valPrev * (1 + DELTA_FACTOR)):
-                    dirChar = CHAR_DIR_UP
-                elif val < (valPrev * (1 - DELTA_FACTOR)):
-                    dirChar = CHAR_DIR_DWN
-                else:
-                    dirChar = CHAR_DIR_EQ
+            if data['dataPtDelta'] > 0:
+                dirChar = CHAR_DIR_UP
+            elif data['dataPtDelta'] < 0:
+                dirChar = CHAR_DIR_DWN
+            else:
+                dirChar = CHAR_DIR_EQ
 
-            text.append(f"{dirChar} {val:>8,.2f} {unit}", color)
+            text.append(
+                f"{dirChar} {data['dataPt']:>8,.2f} {data['unit']}",
+                data['dataPtColor']
+            )
 
         return text
 
-    def _prep_sparkline_str(vals, colors, labelsOnly):
+    def _prep_sparkline_str(data, labelsOnly):
         """Prep sparkline graph string
 
-        NOTE: it seems we cannot use 'termcolors' with sparklines as it
-              somehow clashes with 'rich'
+        NOTE: 'sparklines' library will return string with ANSI color 
+              codes when used with 'termcolors' library.
 
         Args:
-            vals:
-                data for sparkline
-            colors:
-                color values to be applied -- DO NOT USE!
+            data:
+                'dict' with data point value and attributes
             labelsOnly:
-                'bool' if 'True' then we do not generate sparkline
+                'bool' if 'True' then we do not generate 'current value' string
 
         Returns:
-            'str' with sparkline
+            'Text' object with formatted 'current value'
         """
-        return (
-            ""
-            if (labelsOnly or not vals)
-            else sparklines(vals, num_lines=1, minimum=0, maximum=8)[-1]
-        )
+        if labelsOnly or not data['sparkData']:
+            return ''
+        else:
+            return Text.from_ansi(sparklines(
+                    data['sparkData'], 
+                    emph=data['sparkColors'], 
+                    num_lines=1, 
+                    minimum=data['sparkMinMax'][0],
+                    maximum=data['sparkMinMax'][1]
+                )[-1]
+            )
 
     # Build a table
     table = Table(
@@ -199,43 +191,35 @@ def render_table(data, labelsOnly=False):
         box=box.SQUARE_DOUBLE_HEAD,
     )
     table.add_column(
-        Text("Description", justify="center"),
+        Text('Description', justify='center'),
         ratio=1,
         width=12,
         no_wrap=True,
-        overflow="crop",
+        overflow='crop',
     )
     table.add_column(
-        Text("Current", justify="center"), ratio=1, width=16, no_wrap=True, overflow="crop"
+        Text('Current', justify='center'), ratio=1, width=16, no_wrap=True, overflow='crop'
     )
     table.add_column(
-        Text("History", justify="center"), 
+        Text('History', justify='center'),
         ratio=4,
         min_width=12,
         no_wrap=True,
-        overflow="crop",
+        overflow='crop',
     )
 
     # Render rows with/without data
     if data:
         for row in data:
             table.add_row(
-                row["label"],
-                _prep_currval_str(
-                    row["dataPt"],
-                    row["unit"],
-                    row["dataPtColor"],
-                    row["dataPtPrev"],
-                    labelsOnly,
-                ),
-                _prep_sparkline_str(
-                    row["sparkData"][-40:], row["sparkColors"], labelsOnly
-                ),
+                row['label'],                           # 1st column
+                _prep_currval_str(row, labelsOnly),     # 2nd column
+                _prep_sparkline_str(row, labelsOnly)    # 3rd column
             )
     else:
-        table.add_row("", "", "")
-        table.add_row("", "", "")
-        table.add_row("", "", "")
+        table.add_row('', '', '')
+        table.add_row('', '', '')
+        table.add_row('', '', '')
 
     return table
 
@@ -278,34 +262,82 @@ class SenseMonUI:
         """Provide hook to Rich 'layout'"""
         return self._layout if self._active else None
 
+    @property
+    def statusbar(self):    
+        """Provide hook to Rich 'status'"""
+        return self.statusStatus if self._active else None
+    
+    @property
+    def progressbar(self):
+        """Provide hook to Rich 'status'"""
+        return self.statusProgress if self._active else None
+
     def _make_time_str(self, t):
-        timeFmtStr = "%H:%M:%S" if self.show24h else "%I:%M:%S %p"
-        return time.strftime(
-            timeFmtStr, time.localtime(t) if self.showLocal else time.gmtime(t)
-        )
-
-    @staticmethod
-    def init_progressbar(console, refreshRate=2):
-        """Initialize new progress bar."""
-        return Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-            transient=True,
-            refresh_per_second=refreshRate,
-        )
-
-    @staticmethod
-    def init_statusbar(console, msg=None):
-        msg = msg if msg is not None else STATUS_LBL_WAIT
-        return Status(msg, console=console, spinner="dots")
+        timeFmtStr = '%H:%M:%S' if self.show24h else '%I:%M:%S %p'
+        return time.strftime(timeFmtStr, time.localtime(t) if self.showLocal else time.gmtime(t))
 
     def initialize(self, appNameLong, appNameShort, appVer, dataRows, enable=True):
-        console = Console()
-        layout = Layout()
+        """Initialize main UI
+        
+        This method will create the base UI with all components (e.g. logo), 
+        table, status fields, etc.). But there will not be any data.
 
+        Also, the layout will depend on the width of the console. If the console
+        is not wide enough, then the items will be stacked in a single column.
+
+        Args:
+            appNameLong: used for footer
+            appNameShort: used for fancy logo
+            appVer: app version displayed in fancy logo and footer
+            dataRows: table rows with labels
+            enable: 
+        """
+        def _progressbar(console, refreshRate=2):
+            """Initialize progress bar object"""
+            return Progress(
+                TextColumn('[progress.description]{task.description}'),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=console,
+                transient=True,
+                refresh_per_second=refreshRate,
+            )
+
+        def _statusbar(console, msg=None):
+            """Initialize 'status' bar object"""
+            msg = msg if msg is not None else STATUS_LBL_WAIT
+            return Status(msg, console=console, spinner='dots')
+
+        def _footer(appName, conWidth):
+            """Create 'footer' object"""
+            footer = Text()
+
+            # Assemble colorful legend
+            footer.append('  LOW ', f451SenseData.COLOR_MAP[f451SenseData.COLOR_LOW])
+            footer.append('NORMAL ', f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM])
+            footer.append('HIGH', f451SenseData.COLOR_MAP[f451SenseData.COLOR_HIGH])
+
+            # Add app name and version, and push to the right
+            footer.append(appName.rjust(conWidth - len(str(footer)) - 2))
+            footer.end = ''
+
+            return footer
+
+        # Get dimensions of screen/console 
+        console = Console()
         conWidth, conHeight = console.size
+
+        # Is the terminal window big enough to hold the layout? Or does
+        # user not want UI? If not, then we're done.
+        if not enable or conWidth < APP_1COL_MIN_WIDTH or conHeight < APP_MIN_CLI_HEIGHT:
+            return
+
+        # Lets build a layout ... yay!
+        layout = Layout()
+        statusbar = _statusbar(console)
+        progressbar = _progressbar(console)
+
+        # Create fancy logo
         logo = Logo(
             int(conWidth * 2 / 3) if (conWidth >= APP_2COL_MIN_WIDTH) else conWidth,
             appNameLong,
@@ -313,112 +345,107 @@ class SenseMonUI:
             appVer,
         )
 
-        # Is the terminal window big enough to hold the layout? Or does
-        # user not want UI? If not, then we're done.
-        if (
-            not enable
-            or conWidth < APP_1COL_MIN_WIDTH
-            or conHeight < APP_MIN_CLI_HEIGHT
-        ):
-            return
-
-        # If terminal window is wide enough, then split header
-        # row and show fancy logo ...
+        # If terminal window is wide enough, then split 
+        # header row and show fancy logo ...
         if conWidth >= APP_2COL_MIN_WIDTH:
             layout.split(
-                Layout(name="header", size=logo.rows + 1),
-                Layout(name="main", size=9),
-                Layout(name="footer"),
+                Layout(name='header', size=logo.rows + 1),
+                Layout(name='main', size=9),
+                Layout(name='footer'),
             )
-            layout["header"].split_row(
-                Layout(name="logo", ratio=2), Layout(name="action")
-            )
+            layout['header'].split_row(Layout(name='logo', ratio=2), Layout(name='action'))
         # ... else stack all panels without fancy logo
         else:
             layout.split(
-                Layout(name="logo", size=logo.rows + 1, visible=(logo.rows > 1)),
-                Layout(name="action", size=5),
-                Layout(name="main", size=9),
-                Layout(name="footer"),
+                Layout(name='logo', size=logo.rows + 1, visible=(logo.rows > 1)),
+                Layout(name='action', size=5),
+                Layout(name='main', size=9),
+                Layout(name='footer'),
             )
 
-        layout["action"].split(
-            Layout(name="actHdr", size=1),
-            Layout(name="actNextUpld", size=1),
-            Layout(name="actLastUpld", size=1),
-            Layout(name="actNumUpld", size=1),
-            Layout(name="actCurrent", size=1),
+        layout['action'].split(
+            Layout(name='actHdr', size=1),
+            Layout(name='actNextUpld', size=1),
+            Layout(name='actLastUpld', size=1),
+            Layout(name='actNumUpld', size=1),
+            Layout(name='actCurrent', size=1),
         )
 
         # Display fancy logo
         if logo.rows > 1:
-            layout["logo"].update(logo)
+            layout['logo'].update(logo)
 
-        layout["actHdr"].update(Rule(title=self.statusHdr, style=COLOR_DEF, end=""))
-        layout["actNextUpld"].update(Text(f"{self.statusLblNext}--:--:--"))
-        layout["actLastUpld"].update(Text(f"{self.statusLblLast}--:--:--"))
-        layout["actNumUpld"].update(Text(f"{self.statusLblTotUpld}-"))
-        layout["actCurrent"].update(Status(STATUS_LBL_INIT))
+        layout['actHdr'].update(Rule(title=self.statusHdr, style=COLOR_DEF, end=''))
+        layout['actNextUpld'].update(Text(f'{self.statusLblNext}--:--:--'))
+        layout['actLastUpld'].update(Text(f'{self.statusLblLast}--:--:--'))
+        layout['actNumUpld'].update(Text(f'{self.statusLblTotUpld}-'))
+        layout['actCurrent'].update(statusbar)
 
-        # Display main row
-        layout["main"].update(render_table(dataRows, True))
+        # Display main row with data table
+        layout['main'].update(render_table(dataRows, True))
 
         # Display footer row
-        layout["footer"].update(render_footer(logo.plain, conWidth))
+        layout['footer'].update(_footer(logo.plain, conWidth))
 
-        # Updating properties for this object ... and then we're done
-        self.statusStatus = SenseMonUI.init_statusbar(console)
-        self.statusProgress = SenseMonUI.init_progressbar(console)
-
+        # Update properties for this object ... and then we're done
         self._console = console
         self._layout = layout
         self._conWidth = conWidth
         self._conHeight = conHeight
         self._active = True
         self.logo = logo
+        self.statusStatus = statusbar
+        self.statusProgress = progressbar
 
     def update_data(self, data):
         if self._active:
-            self._layout["main"].update(render_table(data))
+            self._layout['main'].update(render_table(data))
 
-    def update_upload_num(self, num):
+    def update_upload_num(self, num, maxNum=0):
         if self._active:
-            self._layout["actNumUpld"].update(
-                Text(f"{self.statusLblTotUpld}{num}", COLOR_DEF)
-            )
+            maxNumStr = f"/{maxNum}" if maxNum > 0 else ''
+            self._layout['actNumUpld'].update(Text(
+                f"{self.statusLblTotUpld}{num}{maxNumStr}",
+                style=COLOR_DEF
+            ))
 
     def update_upload_next(self, nextTime):
         if self._active:
-            self._layout["actNextUpld"].update(
-                Text(f"{self.statusLblNext}{self._make_time_str(nextTime)}", COLOR_DEF)
-            )
+            self._layout['actNextUpld'].update(Text(
+                f"{self.statusLblNext}{self._make_time_str(nextTime)}",
+                style=COLOR_DEF
+            ))
 
     def update_upload_last(self, lastTime, lastStatus=STATUS_OK):
         if self._active:
             text = Text()
             text.append(
-                f"{self.statusLblLast}{self._make_time_str(lastTime)} ", style=COLOR_DEF
+                f"{self.statusLblLast}{self._make_time_str(lastTime)} ",
+                style=COLOR_DEF
             )
 
             if lastStatus == STATUS_OK:
-                text.append("[OK]", COLOR_OK)
+                text.append('[OK]', style=COLOR_OK)
             else:
-                text.append("[Error]", COLOR_ERROR)
+                text.append('[Error]', style=COLOR_ERROR)
 
-            self._layout["actLastUpld"].update(text)
+            self._layout['actLastUpld'].update(text)
 
-    def update_upload_status(self, lastTime, lastStatus, nextTime, numUploads):
+    def update_upload_status(self, lastTime, lastStatus, nextTime, numUploads, maxUploads=0):
         if self._active:
             self.update_upload_next(nextTime)
             self.update_upload_last(lastTime, lastStatus)
-            self.update_upload_num(numUploads)
+            self.update_upload_num(numUploads, maxUploads)
 
-    def update_action(self, scrnObj, actMsg=None):
+    def update_action(self, actMsg=None):
         if self._active:
-            msgStr = actMsg if actMsg else self.statusLblAction
-            self._layout["actCurrent"].update(Status(msgStr))
-            self._layout.refresh_screen(self._console, "actCurrent")
+            msgStr = actMsg if actMsg else STATUS_LBL_WAIT
+            self.statusbar.update(msgStr)
+            self._layout['actCurrent'].update(self.statusbar)
+            # self._layout.refresh_screen(self._console, 'actCurrent')
 
-    def update_progress(self, progress=None):
+    def update_progress(self, progress=0):
         if self._active and progress is not None:
-            self._layout["actCurrent"].update(progress)
+            pass
+            # self.progressbar.update()
+            # self._layout['actCurrent'].update(progress)

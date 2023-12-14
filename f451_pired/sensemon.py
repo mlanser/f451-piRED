@@ -38,9 +38,10 @@ import time
 import sys
 import asyncio
 
-from pathlib import Path
-from datetime import datetime
 from collections import deque
+from datetime import datetime
+from itertools import filterfalse
+from pathlib import Path
 
 from . import constants as const
 from . import sensemon_ui as UI
@@ -58,11 +59,14 @@ from rich.traceback import install as install_rich_traceback
 from Adafruit_IO import RequestError, ThrottlingError
 
 
+# Install Rich 'traceback' to make (debug) life is 
+# easier. Trust me!
+install_rich_traceback(show_locals=True)
+
+
 # =========================================================
 #          G L O B A L    V A R S   &   I N I T S
 # =========================================================
-install_rich_traceback(show_locals=True)
-
 APP_VERSION = '0.0.1'
 APP_NAME = 'f451 Labs piRED - SenseMon'
 APP_NAME_SHORT = 'SenseMon'
@@ -74,6 +78,7 @@ APP_MIN_SENSOR_READ_WAIT = 1            # Min wait in sec between sensor reads
 APP_MIN_PROG_WAIT = 5                   # Remaining min wait time to display prog bar
 APP_WAIT_1SEC = 1
 APP_MAX_DATA = 120                      # Max number of data points in the queue
+APP_DELTA_FACTOR = 0.02                 # Any change within X% is considered negligable
 
 APP_DATA_TYPES = ['temperature', 'pressure', 'humidity']
 
@@ -164,11 +169,12 @@ def prep_data_for_screen(inData, labelsOnly=False):
           we need to map them to colors:
 
           Limit set [A, B, C, D] means:
-                A > value      -> Dangerously Low    = "bright_red"
-                A < value < B  -> Low                = "bright_yellow"
-                B < value < C  -> Normal             = "green"
-                C < value < D  -> High               = "cyan"
-                    value > D  -> Dangerously High   = "blue"
+
+                     val <= A -> Dangerously Low    = "bright_red"
+                B >= val >  A -> Low                = "bright_yellow"
+                C >= val >  B -> Normal             = "green"
+                D >= val >  C -> High               = "cyan"
+                     val >  D -> Dangerously High   = "blue"
 
           Note that the Sparkline library has a specific syntax for
           limits and colors:
@@ -188,48 +194,65 @@ def prep_data_for_screen(inData, labelsOnly=False):
     """
     outData = []
 
-    def _convert_value(val, valid, inMinMax, force=False):
-        """Map a given value against a range for sparklines
+    def _is_valid(val, valid):
+        if val is not None and valid is not None:
+            return (float(val) >= float(valid[0]) and float(val) <= float(valid[1]))
+        
+        return False
 
-        We need convert our data points from the sensor reads to
-        something that we can use with sparklines. This means we'll
-        clean up and/or clamp values as needed.
+    def _in_range(first, second, factor):
+        """Check if 1st value is within X% of 2nd value"""
 
-        We default to 'None' unless we want to 'force' clamping
-        for out-of-bound values.
+        # If either value is 'None' then we have 
+        # to assume 'no change'
+        if first is None or second is None:
+            return 0
+
+        lower = second * (1 - factor)
+        upper = second * (1 + factor)
+        if first > upper:                   # Above range
+            return 1
+        elif first < lower:                 # Below range
+            return -1
+        else:
+            return 0                        # Within range
+
+    def _sparkline_colors(limits):
+        """Create color mapping for sparkline graphs
+        
+        This function creates the 'color' list which allows
+        the 'sparklines' library to add add correct ANSI 
+        color codes to the graph.
         """
-        outVal = 0 if force else None
-
-        if val is not None and (float(val) >= float(valid[0]) and float(val) <= float(valid[1])):
-            outVal = f451Common.num_to_range(val, inMinMax, (1, 8), force)
-
-        return outVal
-
-    def _process_spark_data(data, valid):
-        """Normalize data to fit in range for sparkline graphs"""
-        filtered = [i for i in data if i is not None]
-        return [_convert_value(i, valid, (min(filtered), max(filtered)), False) for i in filtered]
-
-    def _process_spark_limits(data, valid):
-        """Create color mapping for sparkline graphs"""
-        processed = [_convert_value(i, valid, (min(data), max(data)), True) for i in data]
         return [
-            f'{f451SenseData.COLOR_MAP[f451SenseData.COLOR_LOW]}:lt:{round(processed[1], 1)}',   # Low    # type: ignore
-            f'{f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM]}:lt:{round(processed[2], 1)}',  # Normal # type: ignore
-            f'{f451SenseData.COLOR_MAP[f451SenseData.COLOR_HIGH]}:gt:{round(processed[2], 1)}',  # High   # type: ignore
+            f'{f451SenseData.COLOR_MAP[f451SenseData.COLOR_HIGH]}:gt:{round(limits[2], 1)}',  # High   # type: ignore
+            f'{f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM]}:eq:{round(limits[2], 1)}',  # Normal # type: ignore
+            f'{f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM]}:lt:{round(limits[2], 1)}',  # Normal # type: ignore
+            f'{f451SenseData.COLOR_MAP[f451SenseData.COLOR_LOW]}:eq:{round(limits[1], 1)}',   # Low    # type: ignore
+            f'{f451SenseData.COLOR_MAP[f451SenseData.COLOR_LOW]}:lt:{round(limits[1], 1)}',   # Low    # type: ignore
         ]
 
-    def _process_data_limits(val, valid, limits, default=''):
-        """Determine color mapping for specific value"""
+    def _dataPt_color(val, limits, default=''):
+        """Determine color mapping for specific value
+          
+          Limit set [10, 20, 30, 40] means:
+
+                      val <= 10 -> Dangerously Low    = "bright_red"
+                20 >= val >  10 -> Low                = "bright_yellow"
+                30 >= val >  20 -> Normal             = "green"
+                40 >= val >  30 -> High               = "cyan"
+                      val >  40 -> Dangerously High   = "blue"
+
+        """
         color = default
 
-        if val is not None and (float(val) >= float(valid[0]) and float(val) <= float(valid[1])):
-            if val < round(limits[1], 1):
-                color = f451SenseData.COLOR_MAP[f451SenseData.COLOR_LOW]
-            elif val < round(limits[2], 1):
-                color = f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM]
-            else:
+        if val is not None:
+            if val > round(limits[2], 1):
                 color = f451SenseData.COLOR_MAP[f451SenseData.COLOR_HIGH]
+            elif val <= round(limits[1], 1):
+                color = f451SenseData.COLOR_MAP[f451SenseData.COLOR_LOW]
+            else:
+                color = f451SenseData.COLOR_MAP[f451SenseData.COLOR_NORM]
 
         return color
 
@@ -237,34 +260,59 @@ def prep_data_for_screen(inData, labelsOnly=False):
     # for displaying all necessary data in the terminal.
     for key, row in inData.items():
         if key in APP_DATA_TYPES:
-            # Process and map sensor data against sparkline num range
-            sparkData = (
-                list(row['data']) if labelsOnly else _process_spark_data(row['data'], row['valid'])
-            )
+            # Create new crispy clean set
+            dataSet = {
+                        'sparkData': [],
+                        'sparkColors': [],
+                        'sparkMinMax': [],
+                        'dataPt': None,
+                        'dataPtOK': True,
+                        'dataPtDelta': 0,
+                        'dataPtColor': '',
+                        'unit': row['unit'],
+                        'label': row['label'],
+                    }
 
-            # Seems we cannot use this yet as 'termcolors' clashes with 'rich'
-            # sparkColors = [] if labelsOnly else _process_spark_limits(row['limits'], row['valid'])
-            sparkColors = []
+            # If we only need labels, then we'll skip to 
+            # next iteration of the loop
+            if labelsOnly:
+                outData.append(dataSet)
+                continue
 
-            # Define color for data point
-            dataPtColor = (
-                ''
-                if labelsOnly
-                else _process_data_limits(row['data'][-1], row['valid'], row['limits'])
-            )
+            # Data slice we can display in table row
+            dataSlice = list(row['data'])[-40:]
 
-            outData.append(
-                {
-                    'sparkData': sparkData,
-                    'sparkColors': sparkColors,
-                    'dataPt': row['data'][-1],
-                    'dataPtPrev': row['data'][-2],
-                    'dataPtColor': dataPtColor,
-                    'dataLimits': row['limits'],
-                    'unit': row['unit'],
-                    'label': row['label'],
-                }
-            )
+            # Get filtered data to calculate min/max. Note that 'valid' data 
+            # will have only valid values. Any invalid values would have been 
+            # replaced with 'None' values. We can display this set using the 
+            # 'sparklines' library. We continue refining the data by removing 
+            # all 'None' values to get a 'clean' set, which we can use to 
+            # establish min/max values for the set.
+            dataValid = [i if _is_valid(i, row['valid']) else None for i in dataSlice]
+            dataClean = [i for i in dataValid if i is not None]
+
+            # Current data point is valid if value is valid. So we set 'OK' flag 
+            # to 'True' if data is valid or missing (i.e. None) 
+            dataPt = dataSlice[-1] if _is_valid(dataSlice[-1], row['valid']) else None
+            dataPtOK = (dataPt or dataSlice[-1] is None)
+
+            # We determine up/down/sideways trend by looking at delate between 
+            # current value and previous value. If current and/or previous value
+            # is 'None' for whatever reason, then we assume 'sideways' (0)trend.
+            dataPtPrev = dataSlice[-2] if _is_valid(dataSlice[-2], row['valid']) else None
+            dataPtDelta = _in_range(dataPt, dataPtPrev, APP_DELTA_FACTOR)
+
+            # Update data set
+            dataSet['sparkData'] = dataValid
+            dataSet['sparkColors'] = _sparkline_colors(row['limits'])
+            dataSet['sparkMinMax'] = (min(dataClean), max(dataClean)) if dataClean else (None, None)
+            
+            dataSet['dataPt'] = dataPt
+            dataSet['dataPtOK'] = dataPtOK
+            dataSet['dataPtDelta'] = dataPtDelta
+            dataSet['dataPtColor'] = _dataPt_color(dataPt, row['limits'])
+
+            outData.append(dataSet)
 
     return outData
 
@@ -280,58 +328,63 @@ def init_cli_parser():
     """
     parser = argparse.ArgumentParser(
         prog=APP_NAME,
-        description=f'{APP_NAME} [v{APP_VERSION}] - read sensor data from Sense HAT and upload to Adafruit IO and/or Arduino Cloud.',
-        epilog='NOTE: This application requires active accounts with corresponding cloud services.',
+        description=f"{APP_NAME} [v{APP_VERSION}] - read sensor data from Sense HAT and upload to Adafruit IO and/or Arduino Cloud.",
+        epilog="NOTE: This application requires active accounts with corresponding cloud services.",
     )
 
     parser.add_argument(
         '-V',
         '--version',
         action='store_true',
-        help='display script version number and exit',
+        help="display script version number and exit",
     )
-    parser.add_argument('-d', '--debug', action='store_true', help='run script in debug mode')
+    parser.add_argument(
+        '-d', 
+        '--debug', 
+        action='store_true', 
+        help="run script in debug mode"
+    )
     parser.add_argument(
         '--cron',
         action='store_true',
-        help='use when running as cron job - run script once and exit',
+        help="use when running as cron job - run script once and exit",
     )
     parser.add_argument(
         '--noCLI',
         action='store_true',
         default=False,
-        help='do not display output on CLI',
+        help="do not display output on CLI",
     )
     parser.add_argument(
         '--noLED',
         action='store_true',
         default=False,
-        help='do not display output on LED',
+        help="do not display output on LED",
     )
     parser.add_argument(
         '--progress',
         action='store_true',
-        help='show upload progress bar on LED',
+        help="show upload progress bar on LED",
     )
     parser.add_argument(
         '--log',
         action='store',
         type=str,
-        help='name of log file',
+        help="name of log file",
     )
     parser.add_argument(
         '--uploads',
         action='store',
         type=int,
         default=-1,
-        help='number of uploads before exiting',
+        help="number of uploads before exiting",
     )
     parser.add_argument(
         '-v',
         '--verbose',
         action='store_true',
         default=False,
-        help='show output to CLI stdout',
+        help="show output to CLI stdout",
     )
 
     return parser
@@ -487,7 +540,7 @@ def main(cliArgs=None):
         sys.exit(0)
 
     if cliArgs.version:
-        print(f'{APP_NAME} (v{APP_VERSION})')
+        print(f"{APP_NAME} (v{APP_VERSION})")
         sys.exit(0)
 
     # Initialize core data queues and related variables
@@ -495,7 +548,9 @@ def main(cliArgs=None):
     tempCompFactor = CONFIG.get(f451Common.KWD_TEMP_COMP, f451Common.DEF_TEMP_COMP_FACTOR)
     cpuTempsQMaxLen = CONFIG.get(f451Common.KWD_MAX_LEN_CPU_TEMPS, f451Common.MAX_LEN_CPU_TEMPS)
 
-    tempCompYN = tempCompFactor > 0  # If 0 (zero) then do not compensate for CPU temp
+    # If comp factor is 0 (zero), then do NOT compensate 
+    # for CPU temp
+    tempCompYN = (tempCompFactor > 0)
 
     cpuTempsQ = []
     if tempCompYN:
@@ -557,7 +612,7 @@ def main(cliArgs=None):
     screen.update_upload_next(timeUpdate + uploadDelay)
 
     # If log level <= INFO
-    LOGGER.log_info('-- START Data Logging --')
+    LOGGER.log_info("-- START Data Logging --")
 
     with Live(screen.layout, screen=True, redirect_stderr=False) as live:  # noqa: F841
         try:
@@ -598,34 +653,40 @@ def main(cliArgs=None):
                 if timeSinceUpdate >= uploadDelay:
                     screen.update_action('Uploading ...')
                     try:
-                        asyncio.run(
-                            upload_sensor_data(
-                                temperature=round(tempComp, ioRounding),
-                                pressure=round(pressRaw, ioRounding),
-                                humidity=round(humidRaw, ioRounding),
-                                deviceID=f451Common.get_RPI_ID(f451Common.DEF_ID_PREFIX),
-                            )
-                        )
-                        # time.sleep(5)
+                        # asyncio.run(
+                        #     upload_sensor_data(
+                        #         temperature=round(tempComp, ioRounding),
+                        #         pressure=round(pressRaw, ioRounding),
+                        #         humidity=round(humidRaw, ioRounding),
+                        #         deviceID=f451Common.get_RPI_ID(f451Common.DEF_ID_PREFIX),
+                        #     )
+                        # )
+                        time.sleep(10)
 
                     except RequestError as e:
-                        LOGGER.log_error(f'Application terminated: {e}')
+                        LOGGER.log_error(f"Application terminated: {e}")
                         sys.exit(1)
 
                     except ThrottlingError:
-                        # Keep increasing 'ioDelay' each time we get a 'ThrottlingError'
+                        # Keep increasing 'ioDelay' each time we get 
+                        # a 'ThrottlingError'
                         uploadDelay += ioThrottle
 
                     else:
-                        # Reset 'uploadDelay' back to normal 'ioFreq' on successful upload
+                        # Reset 'uploadDelay' back to normal 'ioFreq' 
+                        # on successful upload
                         numUploads += 1
                         uploadDelay = ioFreq
                         exitNow = exitNow or ioUploadAndExit
                         screen.update_upload_status(
-                            timeCurrent, UI.STATUS_OK, timeCurrent + uploadDelay, numUploads
+                            timeCurrent, 
+                            UI.STATUS_OK, 
+                            timeCurrent + uploadDelay, 
+                            numUploads,
+                            maxUploads
                         )
                         LOGGER.log_info(
-                            f'Uploaded: TEMP: {round(tempComp, ioRounding)} - PRESS: {round(pressRaw, ioRounding)} - HUMID: {round(humidRaw, ioRounding)}'
+                            f"Uploaded: TEMP: {round(tempComp, ioRounding)} - PRESS: {round(pressRaw, ioRounding)} - HUMID: {round(humidRaw, ioRounding)}"
                         )
 
                     finally:
@@ -675,15 +736,15 @@ def main(cliArgs=None):
             exitNow = True
 
     # If log level <= INFO
-    LOGGER.log_info('-- END Data Logging --')
+    LOGGER.log_info("-- END Data Logging --")
 
     # A bit of clean-up before we exit ...
     SENSE_HAT.display_reset()
     SENSE_HAT.display_off()
 
     # ... and display summary info
-    print(f'Work end:    {(datetime.now()):%a %b %-d, %Y at %-I:%M:%S %p}')
-    print(f'Num uploads: {numUploads}')
+    print(f"Work end:    {(datetime.now()):%a %b %-d, %Y at %-I:%M:%S %p}")
+    print(f"Num uploads: {numUploads}")
     # console.rule(style="grey", align="center")
 
 
