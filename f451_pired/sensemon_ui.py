@@ -28,7 +28,7 @@ from sparklines import sparklines
 import f451_common.common as f451Common
 import f451_sensehat.sensehat_data as f451SenseData
 
-
+# fmt: off
 # =========================================================
 #              M I S C .   C O N S T A N T S
 # =========================================================
@@ -57,6 +57,7 @@ CHAR_DIR_UP = '↑'           # UP arrow to indicate increase
 CHAR_DIR_EQ = '↔︎'           # SIDEWAYS arrow to little/no change
 CHAR_DIR_DWN = '↓'          # DOWN arrow to indicate decline
 CHAR_DIR_DEF = ' '          # 'blank' to indicate unknown change
+# fmt: o2
 
 
 # =========================================================
@@ -172,13 +173,15 @@ def render_table(data, labelsOnly=False):
         if labelsOnly or not data['sparkData']:
             return ''
         else:
-            return Text.from_ansi(sparklines(
+            return Text.from_ansi(
+                sparklines(
                     data['sparkData'], 
                     emph=data['sparkColors'], 
                     num_lines=1, 
                     minimum=data['sparkMinMax'][0],
                     maximum=data['sparkMinMax'][1]
-                )[-1]
+                )[-1], 
+                justify="center"
             )
 
     # Build a table
@@ -198,7 +201,11 @@ def render_table(data, labelsOnly=False):
         overflow='crop',
     )
     table.add_column(
-        Text('Current', justify='center'), ratio=1, width=16, no_wrap=True, overflow='crop'
+        Text('Current', justify='center'), 
+        ratio=1, 
+        width=16, 
+        no_wrap=True, 
+        overflow='crop'
     )
     table.add_column(
         Text('History', justify='center'),
@@ -235,8 +242,8 @@ class SenseMonUI:
         self._conHeight = 0
         self._active = False
         self.logo = None
-        self.show24h = False  # Show 24-hour time?
-        self.showLocal = True  # Show local time?
+        self.show24h = False    # Show 24-hour time?
+        self.showLocal = True   # Show local time?
         self.statusHdr = HDR_STATUS
         self.statusLblNext = STATUS_LBL_NEXT
         self.statusLblLast = STATUS_LBL_LAST
