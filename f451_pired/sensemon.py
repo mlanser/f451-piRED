@@ -124,6 +124,59 @@ displayUpdate = timeUpdate
 # =========================================================
 #              H E L P E R   F U N C T I O N S
 # =========================================================
+def is_valid(val, valid):
+    """Verify value 'valid'
+
+    We know what 'valid' ranges are for each sensor.
+    This method allows us to verify that a given
+    value falls within that range. Any value outside
+    the range should be considered an error.
+
+    Args:
+        val: value to check
+        valid: 'tuple' with min/max values for valid range
+
+    Returns:
+        'True' if value is valid, else 'False'
+    """
+    if val is not None and valid is not None:
+        return float(val) >= float(valid[0]) and float(val) <= float(valid[1])
+
+    return False
+
+
+def is_range(first, second, factor):
+    """Check if 1st value is within X% of 2nd value
+
+    This method allows us to compare 2 values to see
+    if they're equal-ish, and we can use this to even
+    out minor deviations between sensor readings.
+
+    Args:
+        first: value to compare
+        second: value to compare against
+        factor: factor to extend range for comparison
+
+    Returns:
+        1: above range
+        0: within range
+        -1: below range
+    """
+    # If either value is 'None' then we have to
+    # assume 'no change' ... 'coz we can't compare
+    if first is None or second is None:
+        return 0
+
+    lower = second * (1 - factor)
+    upper = second * (1 + factor)
+    if first > upper:  # Above range
+        return 1
+    elif first < lower:  # Below range
+        return -1
+    else:
+        return 0  # Within range
+
+
 def debug_config_info(cliArgs, console=None):
     """Print/log some basic debug info."""
 
@@ -153,6 +206,51 @@ def debug_config_info(cliArgs, console=None):
 
     # Display CLI args
     LOGGER.log_debug(f'CLI Args:\n{cliArgs}')
+
+
+def prep_data_for_sensehat(inData, ledWidth):
+    """Prep data for Sense HAT
+    
+    This function will filter data to ensure we don't have incorrect 
+    outliers (e.g. from faulty sensors, etc.). The final data set will 
+    have only valid values. Any invalid values will be replaced with 
+    0's so that we can display the set on the Sense HAT LED.
+    
+    This will technically affect the min/max values for the set. However, 
+    we're displaying this data on an 8x8 LED. So visual 'accuracy' is 
+    already less than ideal ;-)
+
+    NOTE: the data structure is more complex than we need for Sense HAT
+    devices. But we want to maintain a basic level of compatibility with
+    other f451 Labs modules.
+
+    Args:
+        inData: data set with 'raw' data from sensors
+        ledWidth: width of LED display
+    
+    Returns:
+        'dict' with compatible structure:
+            {
+                'data': [list of values],
+                'valid': <tuple with min/max>,
+                'unit': <unit string>,
+                'label': <label string>,
+                'limits': [list of limits]
+            }
+    """
+    # Data slice we can display on Sense HAT LED
+    dataSlice = list(inData['data'])[-ledWidth:]
+
+    # Return filtered data
+    dataClean = [i if is_valid(i, inData['valid']) else 0 for i in dataSlice]
+
+    return {
+                'data': dataClean,
+                'valid': inData['valid'],
+                'unit': inData['unit'],
+                'label': inData['label'],
+                'limit': inData['limits']
+            }
 
 
 def prep_data_for_screen(inData, labelsOnly=False, conWidth=UI.APP_2COL_MIN_WIDTH):
@@ -198,57 +296,6 @@ def prep_data_for_screen(inData, labelsOnly=False, conWidth=UI.APP_2COL_MIN_WIDT
         designed for display in the terminal.
     """
     outData = []
-
-    def _is_valid(val, valid):
-        """Verify value 'valid'
-
-        We know what 'valid' ranges are for each sensor.
-        This method allows us to verify that a given
-        value falls within that range. Any value outside
-        the range should be considered an error.
-
-        Args:
-            val: value to check
-            valid: 'tuple' with min/max values for valid range
-
-        Returns:
-            'True' if value is valid, else 'False'
-        """
-        if val is not None and valid is not None:
-            return float(val) >= float(valid[0]) and float(val) <= float(valid[1])
-
-        return False
-
-    def _in_range(first, second, factor):
-        """Check if 1st value is within X% of 2nd value
-
-        This method allows us to compare 2 values to see
-        if they're equal-ish, and we can use this to even
-        out minor deviations between sensor readings.
-
-        Args:
-            first: value to compare
-            second: value to compare against
-            factor: factor to extend range for comparison
-
-        Returns:
-            1: above range
-            0: within range
-           -1: below range
-        """
-        # If either value is 'None' then we have to
-        # assume 'no change' ... 'coz we can't compare
-        if first is None or second is None:
-            return 0
-
-        lower = second * (1 - factor)
-        upper = second * (1 + factor)
-        if first > upper:  # Above range
-            return 1
-        elif first < lower:  # Below range
-            return -1
-        else:
-            return 0  # Within range
 
     def _sparkline_colors(limits, customColors=None):
         """Create color mapping for sparkline graphs
@@ -332,19 +379,19 @@ def prep_data_for_screen(inData, labelsOnly=False, conWidth=UI.APP_2COL_MIN_WIDT
             # 'sparklines' library. We continue refining the data by removing
             # all 'None' values to get a 'clean' set, which we can use to
             # establish min/max values for the set.
-            dataValid = [i if _is_valid(i, row['valid']) else None for i in dataSlice]
+            dataValid = [i if is_valid(i, row['valid']) else None for i in dataSlice]
             dataClean = [i for i in dataValid if i is not None]
 
             # We set 'OK' flag to 'True' if current data point is valid or
             # missing (i.e. None).
-            dataPt = dataSlice[-1] if _is_valid(dataSlice[-1], row['valid']) else None
+            dataPt = dataSlice[-1] if is_valid(dataSlice[-1], row['valid']) else None
             dataPtOK = dataPt or dataSlice[-1] is None
 
             # We determine up/down/sideways trend by looking at delate between
             # current value and previous value. If current and/or previous value
             # is 'None' for whatever reason, then we assume 'sideways' (0)trend.
-            dataPtPrev = dataSlice[-2] if _is_valid(dataSlice[-2], row['valid']) else None
-            dataPtDelta = _in_range(dataPt, dataPtPrev, APP_DELTA_FACTOR)
+            dataPtPrev = dataSlice[-2] if is_valid(dataSlice[-2], row['valid']) else None
+            dataPtDelta = is_range(dataPt, dataPtPrev, APP_DELTA_FACTOR)
 
             # Update data set
             dataSet['sparkData'] = dataValid
@@ -743,13 +790,22 @@ def main(cliArgs=None):
 
                 # Check display mode. Each mode corresponds to a data type
                 if SENSE_HAT.displMode == const.IDX_TEMP:  # type = "temperature"
-                    SENSE_HAT.display_as_graph(senseData.temperature.as_dict())
+                    SENSE_HAT.display_as_graph(prep_data_for_sensehat(
+                        senseData.temperature.as_dict(), 
+                        SENSE_HAT.widthLED
+                    ))
 
                 elif SENSE_HAT.displMode == const.IDX_PRESS:  # type = "pressure"
-                    SENSE_HAT.display_as_graph(senseData.pressure.as_dict())
+                    SENSE_HAT.display_as_graph(prep_data_for_sensehat(
+                        senseData.pressure.as_dict(), 
+                        SENSE_HAT.widthLED
+                    ))
 
                 elif SENSE_HAT.displMode == const.IDX_HUMID:  # type = "humidity"
-                    SENSE_HAT.display_as_graph(senseData.humidity.as_dict())
+                    SENSE_HAT.display_as_graph(prep_data_for_sensehat(
+                        senseData.humidity.as_dict(), 
+                        SENSE_HAT.widthLED
+                    ))
 
                 else:  # Display sparkles
                     SENSE_HAT.display_sparkle()
