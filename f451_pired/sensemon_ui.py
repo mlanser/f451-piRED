@@ -41,9 +41,9 @@ STATUS_OK = 200
 STATUS_LBL_NEXT = 'Next:  '
 STATUS_LBL_LAST = 'Last:  '
 STATUS_LBL_TOT_UPLD = 'Total: '
-STATUS_LBL_WAIT = 'Waiting ...'
-STATUS_LBL_INIT = 'Initializing ...'
-STATUS_LBL_UPLD = 'Uploading ...'
+STATUS_LBL_WAIT = 'Waiting …'
+STATUS_LBL_INIT = 'Initializing …'
+STATUS_LBL_UPLD = 'Uploading …'
 
 HDR_STATUS = 'Uploads'
 VAL_BLANK_STR = '--'        # Use for 'blank' data
@@ -57,6 +57,8 @@ CHAR_DIR_UP = '↑'           # UP arrow to indicate increase
 CHAR_DIR_EQ = '↔︎'           # SIDEWAYS arrow to little/no change
 CHAR_DIR_DWN = '↓'          # DOWN arrow to indicate decline
 CHAR_DIR_DEF = ' '          # 'blank' to indicate unknown change
+
+MAX_PROGBAR = 100           # Use 100% as max for progress bars
 # fmt: o2
 
 
@@ -219,9 +221,9 @@ def render_table(data, labelsOnly=False):
     if data:
         for row in data:
             table.add_row(
-                row['label'],                           # 1st column
-                _prep_currval_str(row, labelsOnly),     # 2nd column
-                _prep_sparkline_str(row, labelsOnly)    # 3rd column
+                row['label'],                           # 1st col: label
+                _prep_currval_str(row, labelsOnly),     # 2nd col: current value
+                _prep_sparkline_str(row, labelsOnly)    # 3rd col: sparkline
             )
     else:
         table.add_row('', '', '')
@@ -236,11 +238,13 @@ def render_table(data, labelsOnly=False):
 # =========================================================
 class SenseMonUI:
     def __init__(self):
-        self._console = None
-        self._layout = None
+        self._console = Console()
+        self._layout = Layout()
         self._conWidth = 0
         self._conHeight = 0
         self._active = False
+        self._progBar = None
+        self._progTaskID = None
         self.logo = None
         self.show24h = False    # Show 24-hour time?
         self.showLocal = True   # Show local time?
@@ -248,8 +252,6 @@ class SenseMonUI:
         self.statusLblNext = STATUS_LBL_NEXT
         self.statusLblLast = STATUS_LBL_LAST
         self.statusLblTotUpld = STATUS_LBL_TOT_UPLD
-        self.statusStatus = None
-        self.statusProgress = None
 
     @property
     def is_dual_col(self):
@@ -270,18 +272,31 @@ class SenseMonUI:
         return self._layout if self._active else None
 
     @property
-    def statusbar(self):    
-        """Provide hook to Rich 'status'"""
-        return self.statusStatus if self._active else None
-    
-    @property
-    def progressbar(self):
-        """Provide hook to Rich 'status'"""
-        return self.statusProgress if self._active else None
+    def statusbar(self):
+         """Provide hook to Rich 'status'"""
+         return self._layout['actCurrent'] if self._active else None
 
     def _make_time_str(self, t):
         timeFmtStr = '%H:%M:%S' if self.show24h else '%I:%M:%S %p'
         return time.strftime(timeFmtStr, time.localtime(t) if self.showLocal else time.gmtime(t))
+
+    @staticmethod
+    def _make_progressbar(console, refreshRate=2):
+        """Initialize progress bar object"""
+        return Progress(
+            TextColumn('[progress.description]{task.description}'),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+            transient=True,
+            refresh_per_second=refreshRate,
+        )
+
+    @staticmethod
+    def _make_statusbar(console, msg=None):
+        """Initialize 'status' bar object"""
+        msg = msg if msg is not None else STATUS_LBL_WAIT
+        return Status(msg, console=console, spinner='dots')
 
     def initialize(self, appNameLong, appNameShort, appVer, dataRows, enable=True):
         """Initialize main UI
@@ -299,22 +314,6 @@ class SenseMonUI:
             dataRows: table rows with labels
             enable: 
         """
-        def _progressbar(console, refreshRate=2):
-            """Initialize progress bar object"""
-            return Progress(
-                TextColumn('[progress.description]{task.description}'),
-                BarColumn(),
-                TaskProgressColumn(),
-                console=console,
-                transient=True,
-                refresh_per_second=refreshRate,
-            )
-
-        def _statusbar(console, msg=None):
-            """Initialize 'status' bar object"""
-            msg = msg if msg is not None else STATUS_LBL_WAIT
-            return Status(msg, console=console, spinner='dots')
-
         def _footer(appName, conWidth):
             """Create 'footer' object"""
             footer = Text()
@@ -331,18 +330,13 @@ class SenseMonUI:
             return footer
 
         # Get dimensions of screen/console 
-        console = Console()
-        conWidth, conHeight = console.size
+        # console = Console()
+        conWidth, conHeight = self._console.size
 
         # Is the terminal window big enough to hold the layout? Or does
         # user not want UI? If not, then we're done.
         if not enable or conWidth < APP_1COL_MIN_WIDTH or conHeight < APP_MIN_CLI_HEIGHT:
             return
-
-        # Lets build a layout ... yay!
-        layout = Layout()
-        statusbar = _statusbar(console)
-        progressbar = _progressbar(console)
 
         # Create fancy logo
         logo = Logo(
@@ -355,22 +349,25 @@ class SenseMonUI:
         # If terminal window is wide enough, then split 
         # header row and show fancy logo ...
         if conWidth >= APP_2COL_MIN_WIDTH:
-            layout.split(
+            self._layout.split(
                 Layout(name='header', size=logo.rows + 1),
                 Layout(name='main', size=9),
                 Layout(name='footer'),
             )
-            layout['header'].split_row(Layout(name='logo', ratio=2), Layout(name='action'))
+            self._layout['header'].split_row(
+                Layout(name='logo', ratio=2), 
+                Layout(name='action')
+            )
         # ... else stack all panels without fancy logo
         else:
-            layout.split(
+            self._layout.split(
                 Layout(name='logo', size=logo.rows + 1, visible=(logo.rows > 1)),
                 Layout(name='action', size=5),
                 Layout(name='main', size=9),
                 Layout(name='footer'),
             )
 
-        layout['action'].split(
+        self._layout['action'].split(
             Layout(name='actHdr', size=1),
             Layout(name='actNextUpld', size=1),
             Layout(name='actLastUpld', size=1),
@@ -380,29 +377,25 @@ class SenseMonUI:
 
         # Display fancy logo
         if logo.rows > 1:
-            layout['logo'].update(logo)
+            self._layout['logo'].update(logo)
 
-        layout['actHdr'].update(Rule(title=self.statusHdr, style=COLOR_DEF, end=''))
-        layout['actNextUpld'].update(Text(f'{self.statusLblNext}--:--:--'))
-        layout['actLastUpld'].update(Text(f'{self.statusLblLast}--:--:--'))
-        layout['actNumUpld'].update(Text(f'{self.statusLblTotUpld}-'))
-        layout['actCurrent'].update(statusbar)
+        self._layout['actHdr'].update(Rule(title=self.statusHdr, style=COLOR_DEF, end=''))
+        self._layout['actNextUpld'].update(Text(f'{self.statusLblNext}--:--:--'))
+        self._layout['actLastUpld'].update(Text(f'{self.statusLblLast}--:--:--'))
+        self._layout['actNumUpld'].update(Text(f'{self.statusLblTotUpld}-'))
+        self._layout['actCurrent'].update(SenseMonUI._make_statusbar(self._console))
 
         # Display main row with data table
-        layout['main'].update(render_table(dataRows, True))
+        self._layout['main'].update(render_table(dataRows, True))
 
         # Display footer row
-        layout['footer'].update(_footer(logo.plain, conWidth))
+        self._layout['footer'].update(_footer(logo.plain, conWidth))
 
         # Update properties for this object ... and then we're done
-        self._console = console
-        self._layout = layout
         self._conWidth = conWidth
         self._conHeight = conHeight
         self._active = True
         self.logo = logo
-        self.statusStatus = statusbar
-        self.statusProgress = progressbar
 
     def update_data(self, data):
         if self._active:
@@ -446,13 +439,16 @@ class SenseMonUI:
 
     def update_action(self, actMsg=None):
         if self._active:
-            msgStr = actMsg if actMsg else STATUS_LBL_WAIT
-            self.statusbar.update(msgStr)
-            self._layout['actCurrent'].update(self.statusbar)
-            # self._layout.refresh_screen(self._console, 'actCurrent')
+            msgStr = STATUS_LBL_WAIT if actMsg is None else actMsg
+            self._layout['actCurrent'].update(self._make_statusbar(self._console, msgStr))
 
-    def update_progress(self, progress=0):
-        if self._active and progress is not None:
-            pass
-            # self.progressbar.update()
-            # self._layout['actCurrent'].update(progress)
+    def update_progress(self, progUpdate=None, progMsg=None):
+        if self._active:
+            if progUpdate is None or self._progBar is None:
+                msgStr = STATUS_LBL_WAIT if progMsg is None else progMsg
+                self._progBar = self._make_progressbar(self._console)
+                self._progTaskID = self._progBar.add_task(description=msgStr, total=MAX_PROGBAR)
+                self._layout['actCurrent'].update(self._progBar)
+            else:
+                self._progBar.update(self._progTaskID, completed=progUpdate) # type: ignore
+                # assert False

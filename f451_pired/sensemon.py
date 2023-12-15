@@ -79,7 +79,7 @@ APP_SETTINGS = 'settings.toml'          # Standard for all f451 Labs projects
 APP_DIR = Path(__file__).parent         # Find dir for this app
 
 APP_MIN_SENSOR_READ_WAIT = 1            # Min wait in sec between sensor reads
-APP_MIN_PROG_WAIT = 5                   # Remaining min wait time to display prog bar
+APP_MIN_PROG_WAIT = 1                   # Remaining min (loop) wait time to display prog bar
 APP_WAIT_1SEC = 1
 APP_MAX_DATA = 120                      # Max number of data points in the queue
 APP_DELTA_FACTOR = 0.02                 # Any change within X% is considered negligable
@@ -243,12 +243,12 @@ def prep_data_for_screen(inData, labelsOnly=False, conWidth=UI.APP_2COL_MIN_WIDT
 
         lower = second * (1 - factor)
         upper = second * (1 + factor)
-        if first > upper:       # Above range
+        if first > upper:  # Above range
             return 1
-        elif first < lower:     # Below range
+        elif first < lower:  # Below range
             return -1
         else:
-            return 0            # Within range
+            return 0  # Within range
 
     def _sparkline_colors(limits, customColors=None):
         """Create color mapping for sparkline graphs
@@ -335,8 +335,8 @@ def prep_data_for_screen(inData, labelsOnly=False, conWidth=UI.APP_2COL_MIN_WIDT
             dataValid = [i if _is_valid(i, row['valid']) else None for i in dataSlice]
             dataClean = [i for i in dataValid if i is not None]
 
-            # Current data point is valid if value is valid. So we set 'OK' flag
-            # to 'True' if data is valid or missing (i.e. None)
+            # We set 'OK' flag to 'True' if current data point is valid or
+            # missing (i.e. None).
             dataPt = dataSlice[-1] if _is_valid(dataSlice[-1], row['valid']) else None
             dataPtOK = dataPt or dataSlice[-1] is None
 
@@ -589,15 +589,14 @@ def main(cliArgs=None):
     tempCompFactor = CONFIG.get(f451Common.KWD_TEMP_COMP, f451Common.DEF_TEMP_COMP_FACTOR)
     cpuTempsQMaxLen = CONFIG.get(f451Common.KWD_MAX_LEN_CPU_TEMPS, f451Common.MAX_LEN_CPU_TEMPS)
 
-    # If comp factor is 0 (zero), then do NOT compensate
-    # for CPU temp
+    # If comp factor is 0 (zero), then
+    # do NOT compensate for CPU temp
     tempCompYN = tempCompFactor > 0
 
     cpuTempsQ = []
     if tempCompYN:
         cpuTempsQ = deque(
-            [SENSE_HAT.get_CPU_temp(False)] * cpuTempsQMaxLen, 
-            maxlen=cpuTempsQMaxLen
+            [SENSE_HAT.get_CPU_temp(False)] * cpuTempsQMaxLen, maxlen=cpuTempsQMaxLen
         )
 
     # Initialize UI for terminal
@@ -642,6 +641,7 @@ def main(cliArgs=None):
         debug_config_info(cliArgs, screen.console)
 
     # -- Main application loop --
+    workStart = datetime.now()
     timeSinceUpdate = 0
     timeUpdate = time.time()
     displayUpdate = timeUpdate
@@ -667,7 +667,7 @@ def main(cliArgs=None):
 
                 # --- Get sensor data ---
                 #
-                screen.update_action('Reading sensors ...')
+                screen.update_action('Reading sensors …')
 
                 # Get raw temp from sensor
                 tempRaw = tempComp = SENSE_HAT.get_temperature()
@@ -689,21 +689,20 @@ def main(cliArgs=None):
                 pressRaw = SENSE_HAT.get_pressure()
                 humidRaw = SENSE_HAT.get_humidity()
                 #
-                # ---
+                # -----------------------
 
                 # Is it time to upload data?
                 if timeSinceUpdate >= uploadDelay:
-                    screen.update_action('Uploading ...')
+                    screen.update_action('Uploading …')
                     try:
-                        # asyncio.run(
-                        #     upload_sensor_data(
-                        #         temperature=round(tempComp, ioRounding),
-                        #         pressure=round(pressRaw, ioRounding),
-                        #         humidity=round(humidRaw, ioRounding),
-                        #         deviceID=f451Common.get_RPI_ID(f451Common.DEF_ID_PREFIX),
-                        #     )
-                        # )
-                        time.sleep(10)
+                        asyncio.run(
+                            upload_sensor_data(
+                                temperature=round(tempComp, ioRounding),
+                                pressure=round(pressRaw, ioRounding),
+                                humidity=round(humidRaw, ioRounding),
+                                deviceID=f451Common.get_RPI_ID(f451Common.DEF_ID_PREFIX),
+                            )
+                        )
 
                     except RequestError as e:
                         LOGGER.log_error(f'Application terminated: {e}')
@@ -758,21 +757,22 @@ def main(cliArgs=None):
                 # Are we done? And do we have to wait a bit before next sensor read?
                 if not exitNow:
                     # If we'tre not done and there's a substantial wait before we can
-                    # read the sensors again, then lets display and update the progress
-                    # bar as needed. Once the wait is done, we can go through this whole
-                    # loop all over again ... phew!
+                    # read the sensors again (e.g. we only want to read sensors every
+                    # few minutes for whatever reason), then lets display and update
+                    # the progress bar as needed. Once the wait is done, we can go
+                    # through this whole loop all over again ... phew!
                     if ioWait > APP_MIN_PROG_WAIT:
-                        progress = screen.init_progressbar()
-                        task = progress.add_task('Waiting for sensors ...')
-                        screen.update_progress(progress)
+                        screen.update_progress(None, 'Waiting for sensors …')
                         for i in range(ioWait):
-                            progress.update(task, completed=int(i / ioWait * 100))
-                            SENSE_HAT.display_progress(timeSinceUpdate / uploadDelay)
+                            screen.update_progress(int(i / ioWait * 100))
                             time.sleep(APP_WAIT_1SEC)
+                        screen.update_action()
                     else:
-                        # screen.update_action(UI.STATUS_LBL_WAIT)
-                        # screen.update_action("TEST 1-2-3")
+                        screen.update_action()
                         time.sleep(ioWait)
+
+                    # Update Sense HAT prog bar as needed
+                    SENSE_HAT.display_progress(timeSinceUpdate / uploadDelay)
 
         except KeyboardInterrupt:
             exitNow = True
@@ -785,9 +785,18 @@ def main(cliArgs=None):
     SENSE_HAT.display_off()
 
     # ... and display summary info
-    print(f'Work end:    {(datetime.now()):%a %b %-d, %Y at %-I:%M:%S %p}')
-    print(f'Num uploads: {numUploads}')
-    # console.rule(style="grey", align="center")
+    print()
+    screen.console.rule(f'{APP_NAME_SHORT} - Summary', style='grey', align='center')
+    print(f'App name:    {APP_NAME}')
+    print(f'App version: {APP_VERSION}\n')
+    print(f'Work start:  {workStart:%a %b %-d, %Y at %-I:%M:%S %p}')
+    print(f'Work end:    {(datetime.now()):%a %b %-d, %Y at %-I:%M:%S %p}\n')
+
+    ofMaxStr = f' of {maxUploads}' if maxUploads > 0 else ''
+    print(f'Num uploads: {numUploads}{ofMaxStr}')
+
+    screen.console.rule(style='grey', align='center')
+    print()
 
 
 # =========================================================
