@@ -1,4 +1,4 @@
 """f451 Labs applications for piRED device."""
 
-__version__ = '0.2.2'
+__version__ = '0.2.3'
 __app_name__ = 'f451-piRED'
