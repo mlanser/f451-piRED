@@ -789,19 +789,19 @@ def main(cliArgs=None):
                 screen.update_data(prep_data_for_screen(senseData.as_dict()))
 
                 # Check display mode. Each mode corresponds to a data type
-                if SENSE_HAT.displMode == const.IDX_TEMP:  # type = "temperature"
+                if SENSE_HAT.displMode == const.DISPL_TEMP:  # type = "temperature"
                     SENSE_HAT.display_as_graph(prep_data_for_sensehat(
                         senseData.temperature.as_dict(), 
                         SENSE_HAT.widthLED
                     ))
 
-                elif SENSE_HAT.displMode == const.IDX_PRESS:  # type = "pressure"
+                elif SENSE_HAT.displMode == const.DISPL_PRESS:  # type = "pressure"
                     SENSE_HAT.display_as_graph(prep_data_for_sensehat(
                         senseData.pressure.as_dict(), 
                         SENSE_HAT.widthLED
                     ))
 
-                elif SENSE_HAT.displMode == const.IDX_HUMID:  # type = "humidity"
+                elif SENSE_HAT.displMode == const.DISPL_HUMID:  # type = "humidity"
                     SENSE_HAT.display_as_graph(prep_data_for_sensehat(
                         senseData.humidity.as_dict(), 
                         SENSE_HAT.widthLED
