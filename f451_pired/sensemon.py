@@ -71,7 +71,7 @@ install_rich_traceback(show_locals=True)
 # =========================================================
 #          G L O B A L    V A R S   &   I N I T S
 # =========================================================
-APP_VERSION = '0.2.3'
+APP_VERSION = '0.2.4'
 APP_NAME = 'f451 Labs piRED - SenseMon'
 APP_NAME_SHORT = 'SenseMon'
 APP_LOG = 'f451-pired-sensemon.log'     # Individual logs for devices with multiple apps
