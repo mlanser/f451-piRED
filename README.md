@@ -1,4 +1,4 @@
-# Instructions for f451-piRED v0.2.4
+# Instructions for f451-piRED v1.0.0
 
 ## Custom application settings in SETTINGS.TOML
 
