@@ -631,7 +631,7 @@ def collect_data(app, data, cpuTempsQ, timeCurrent, cliUI=False):
                 f'Uploaded: TEMP: {round(tempComp, app.ioRounding)} - PRESS: {round(pressRaw, app.ioRounding)} - HUMID: {round(humidRaw, app.ioRounding)}'
             )
             app.update_upload_status(cliUI, timeCurrent, f451CLIUI.STATUS_OK)
-            
+
         finally:
             app.timeUpdate = timeCurrent
             exitApp = (app.maxUploads > 0) and (app.numUploads >= app.maxUploads)
@@ -716,7 +716,7 @@ def main_loop(app, data, cliUI=False):
 # =========================================================
 #      M A I N   F U N C T I O N    /   A C T I O N S
 # =========================================================
-def main(cliArgs=None):
+def main(cliArgs=None):  # sourcery skip: extract-method
     """Main function.
 
     This function will goes through the setup and then runs the
@@ -773,15 +773,21 @@ def main(cliArgs=None):
         appRT.logger.log_error(f'Application terminated due to REQUEST ERROR: {e}')
         sys.exit(1)
 
-    # Initialize device instance which includes all sensors
-    # and LED display on Sense HAT. Also initialize joystick
-    # events and set 'sleep' and 'display' modes.
-    appRT.add_sensor('SenseHat', f451SenseHat.SenseHat)
-    appRT.sensors['SenseHat'].joystick_init(**APP_JOYSTICK_ACTIONS)
-    appRT.sensors['SenseHat'].display_init(**APP_DISPLAY_MODES)
-    appRT.sensors['SenseHat'].update_sleep_mode(cliArgs.noLED)
-    appRT.sensors['SenseHat'].displProgress = cliArgs.progress
-    appRT.sensors['SenseHat'].display_message(APP_NAME)
+    try:
+        # Initialize device instance which includes all sensors
+        # and LED display on Sense HAT. Also initialize joystick
+        # events and set 'sleep' and 'display' modes.
+        appRT.add_sensor('SenseHat', f451SenseHat.SenseHat)
+        appRT.sensors['SenseHat'].joystick_init(**APP_JOYSTICK_ACTIONS)
+        appRT.sensors['SenseHat'].display_init(**APP_DISPLAY_MODES)
+        appRT.sensors['SenseHat'].update_sleep_mode(cliArgs.noLED)
+        appRT.sensors['SenseHat'].displProgress = cliArgs.progress
+        appRT.sensors['SenseHat'].display_message(APP_NAME)
+
+    except KeyboardInterrupt:
+        appRT.sensors['SenseHat'].display_reset()
+        print(f'{APP_NAME} (v{APP_VERSION}) - Session terminated by user')
+        sys.exit(0)
 
     # --- Main application loop ---
     #
