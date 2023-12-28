@@ -33,11 +33,12 @@ NOTE: Parts of this code is based on ideas found in the 'luftdaten_combined.py' 
       and more.
 
 Dependencies:
-    - adafruit-io - only install if you have an account with Adafruit IO
+ - adafruit-io - only install if you have an account with Adafruit IO
 
 TODO:
-    - add support for custom colors in 'settings.toml'
-    - add support for custom range factor in 'settings.toml'
+ - add support for custom colors in 'settings.toml'
+ - add support for custom range factor in 'settings.toml'
+ - more/better tests
 """
 
 import time
@@ -552,8 +553,8 @@ def hurry_up_and_wait(app, cliUI=False):
 
 def collect_data(app, data, cpuTempsQ, timeCurrent, cliUI=False):
     """Collect data from sensors.
-    
-    This is core of the application where we collect data from 
+
+    This is core of the application where we collect data from
     one or more sensors, and then upload the data as needed.
 
     Args:
@@ -642,9 +643,7 @@ def collect_data(app, data, cpuTempsQ, timeCurrent, cliUI=False):
     data.humidity.data.append(humidRaw)
 
     update_SenseHat_LED(app.sensors['SenseHat'], data)
-    app.update_data(
-        cliUI, f451CLIUI.prep_data(data.as_dict(), APP_DATA_TYPES, APP_DELTA_FACTOR)
-    )
+    app.update_data(cliUI, f451CLIUI.prep_data(data.as_dict(), APP_DATA_TYPES, APP_DELTA_FACTOR))
 
     return exitApp
 
@@ -696,12 +695,13 @@ def main_loop(app, data, cliUI=False):
                 if app.ioWait > APP_MIN_PROG_WAIT:
                     app.update_progress(cliUI, None, 'Waiting for speed test')
 
-            # Update UI and SenseHAT LED as needed
-            # app.update_data(
-            #     cliUI, f451CLIUI.prep_data(data.as_dict(), APP_DATA_TYPES, APP_DELTA_FACTOR)
-            # )
-            # update_SenseHat_LED(app.sensors['SenseHat'], data)
-            # app.sensors['SenseHat'].display_progress(app.timeSinceUpdate / app.uploadDelay)
+            # Update UI and SenseHAT LED as needed even when we're just waiting for 
+            # next upload. This means that more sparkles are generated as well
+            app.update_data(
+                cliUI, f451CLIUI.prep_data(data.as_dict(), APP_DATA_TYPES, APP_DELTA_FACTOR)
+            )
+            update_SenseHat_LED(app.sensors['SenseHat'], data)
+            app.sensors['SenseHat'].display_progress(app.timeSinceUpdate / app.uploadDelay)
 
         except KeyboardInterrupt:
             exitApp = True
