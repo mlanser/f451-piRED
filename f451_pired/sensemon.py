@@ -78,7 +78,7 @@ install_rich_traceback(show_locals=True)
 # =========================================================
 #          G L O B A L S   A N D   H E L P E R S
 # =========================================================
-APP_VERSION = '1.0.2'
+APP_VERSION = '1.0.3'
 APP_NAME = 'f451 Labs - SenseMon'
 APP_NAME_SHORT = 'SenseMon'
 APP_LOG = 'f451-sensemon.log'       # Individual logs for devices with multiple apps
