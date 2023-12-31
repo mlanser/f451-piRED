@@ -14,8 +14,8 @@ This command launches the 'sensemon' application in the background. The applicat
 keep running even after the terminal window is closed. Any output will be redirected to 
 the 'sensemon.out' file.    
 
-It's also possible to install this application via 'pip' from Github and one 
-can launch the application as follows:
+It's also possible to install this application via 'pip' from Github, and one can then
+launch the application as follows:
 
     $ nohup sensemon > sensemon.out &
 
@@ -96,16 +96,20 @@ APP_DATA_TYPES = [
     const.KWD_DATA_HUMID            # 'humidity'
 ]
 
-APP_DISPLAY_MODES = {
-    f451SenseHat.KWD_DISPLAY_MIN: const.MIN_DISPL,
-    f451SenseHat.KWD_DISPLAY_MAX: const.MAX_DISPL,
-}
+APP_DISPL_MODES = [
+    const.DISPL_TEMPS,              # Display 'temperature' in C
+    const.DISPL_PRESS,              # Display barometric 'pressure'
+    const.DISPL_HUMID,              # Display 'humidity'
+]
+
+COLOR_LOGO_FG = (255, 0, 0)
+COLOR_LOGO_BG = (67, 70, 75)
 
 class AppRT(f451Common.Runtime):
     """Application runtime object.
     
     We use this object to store/manage configuration and any other variables
-    required to run this application as object atrtribustes. This allows us to
+    required to run this application as object attributes. This allows us to
     have fewer global variables.
     """
     def __init__(self, appName, appVersion, appNameShort=None, appLog=None, appSettings=None):
@@ -119,6 +123,20 @@ class AppRT(f451Common.Runtime):
             Path(__file__).parent   # Find dir for this app
         )
         
+    def _init_log_settings(self, cliArgs):
+        """Helper for setting logger settings"""
+        if cliArgs.debug:
+            self.logLvl = f451Logger.LOG_DEBUG
+            self.debugMode = True
+        else:
+            self.logLvl = self.config.get(f451Logger.KWD_LOG_LEVEL, f451Logger.LOG_NOTSET)
+            self.debugMode = (self.logLvl == f451Logger.LOG_DEBUG)
+
+        self.logger.set_log_level(self.logLvl)
+
+        if cliArgs.log is not None:
+            self.logger.set_log_file(appRT.logLvl, cliArgs.log)
+
     def init_runtime(self, cliArgs, data):
         """Initialize the 'runtime' variable
         
@@ -142,18 +160,8 @@ class AppRT(f451Common.Runtime):
         self.ioRounding = self.config.get(const.KWD_ROUNDING, const.DEF_ROUNDING)
         self.ioUploadAndExit = False
 
-        # Update log file or level?
-        if cliArgs.debug:
-            self.logLvl = f451Logger.LOG_DEBUG
-            self.debugMode = True
-        else:
-            self.logLvl = self.config.get(f451Logger.KWD_LOG_LEVEL, f451Logger.LOG_NOTSET)
-            self.debugMode = (self.logLvl == f451Logger.LOG_DEBUG)
-
-        self.logger.set_log_level(self.logLvl)
-
-        if cliArgs.log is not None:
-            self.logger.set_log_file(appRT.logLvl, cliArgs.log)
+        # Initialize log file/level
+        self._init_log_settings(cliArgs)
 
         # Initialize various counters, etc.
         self.timeSinceUpdate = float(0)
@@ -164,6 +172,7 @@ class AppRT(f451Common.Runtime):
         self.numUploads = 0
         self.loopWait = APP_WAIT_1SEC   # Wait time between main loop cycles
 
+        # Configure CPU temp comp factor
         self.tempCompFactor = self.config.get(f451Common.KWD_TEMP_COMP, f451Common.DEF_TEMP_COMP_FACTOR)
         self.cpuTempsQMaxLen = self.config.get(f451Common.KWD_MAX_LEN_CPU_TEMPS, f451Common.MAX_LEN_CPU_TEMPS)
 
@@ -222,9 +231,7 @@ class AppRT(f451Common.Runtime):
         self.logger.log_debug(f'IO THROTTLE: {self.ioThrottle}')
 
         # Display Raspberry Pi serial and Wi-Fi status
-        self.logger.log_debug(
-            f'Raspberry Pi serial: {f451Common.get_RPI_serial_num()}'
-        )
+        self.logger.log_debug(f'Raspberry Pi serial: {f451Common.get_RPI_serial_num()}')
         self.logger.log_debug(
             f'Wi-Fi: {(f451Common.STATUS_YES if f451Common.check_wifi() else f451Common.STATUS_UNKNOWN)}'
         )
@@ -385,7 +392,7 @@ def btn_left(event):
     global appRT
 
     if event.action != f451SenseHat.BTN_RELEASE:
-        appRT.sensors['SenseHat'].update_display_mode(-1)
+        appRT.sensors['SenseHat'].set_display_mode(-1)
         appRT.displayUpdate = time.time()
 
 
@@ -397,7 +404,7 @@ def btn_right(event):
     global appRT
 
     if event.action != f451SenseHat.BTN_RELEASE:
-        appRT.sensors['SenseHat'].update_display_mode(1)
+        appRT.sensors['SenseHat'].set_display_mode(1)
         appRT.displayUpdate = time.time()
 
 
@@ -452,7 +459,7 @@ def update_SenseHat_LED(sense, data, colors=None):
 
     # Check display mode. Each mode corresponds to a data type.
     # Show temperature?
-    if sense.displMode == const.DISPL_TEMP:
+    if sense.displMode == const.DISPL_TEMPS:
         minMax = _minMax(data.temperature.as_tuple().data)
         dataClean = f451SenseHat.prep_data(data.temperature.as_tuple())
         colorMap = _get_color_map(dataClean, colors)
@@ -472,7 +479,7 @@ def update_SenseHat_LED(sense, data, colors=None):
         colorMap = _get_color_map(dataClean, colors)
         sense.display_as_graph(dataClean, minMax, colorMap)
 
-    # Show sparkles? :-)
+    # Or ... display sparkles :-)
     else:
         sense.display_sparkle()
 
@@ -520,35 +527,14 @@ def init_cli_parser(appName, appVersion, setDefaults=True):
         default=-1,
         help='number of uploads before exiting',
     )
+    parser.add_argument(
+        '--dmode',
+        action='store',
+        help='display mode',
+    )
 
     return parser
     # fmt: on
-
-
-def hurry_up_and_wait(app, cliUI=False):
-    """Display wait messages and progress bars
-
-    This function comes into play if we have longer wait times
-    between sensor reads, etc. For example, we may want to read
-    temperature sensors every second. But we may want to wait a
-    minute or more to run internet speed tests.
-
-    Args:
-        app: hook to app runtime object
-        cliUI: 'bool' indicating whether user wants full UI
-    """
-    if app.ioWait > APP_MIN_PROG_WAIT:
-        app.update_progress(cliUI, None, 'Waiting for sensors')
-        for i in range(app.ioWait):
-            app.update_progress(cliUI, int(i / app.ioWait * 100))
-            time.sleep(APP_WAIT_1SEC)
-        app.update_action(cliUI, None)
-    else:
-        time.sleep(app.ioWait)
-
-    # Update Sense HAT prog bar as needed with time remaining
-    # until next data upload
-    app.sensors['SenseHat'].display_progress(app.timeSinceUpdate / app.uploadDelay)
 
 
 def collect_data(app, data, cpuTempsQ, timeCurrent, cliUI=False):
@@ -693,7 +679,7 @@ def main_loop(app, data, cliUI=False):
                 exitApp = collect_data(app, data, cpuTempsQ, timeCurrent, cliUI)
                 waitForSensor = max(app.ioWait, APP_MIN_PROG_WAIT)
                 if app.ioWait > APP_MIN_PROG_WAIT:
-                    app.update_progress(cliUI, None, 'Waiting for speed test')
+                    app.update_progress(cliUI, None, 'Waiting for sensor')
 
             # Update UI and SenseHAT LED as needed even when we're just waiting for 
             # next upload. This means that more sparkles are generated as well
@@ -778,13 +764,18 @@ def main(cliArgs=None):  # sourcery skip: extract-method
         # events and set 'sleep' and 'display' modes.
         appRT.add_sensor('SenseHat', f451SenseHat.SenseHat)
         appRT.sensors['SenseHat'].joystick_init(**APP_JOYSTICK_ACTIONS)
-        appRT.sensors['SenseHat'].display_init(**APP_DISPLAY_MODES)
+        appRT.sensors['SenseHat'].add_displ_modes(APP_DISPL_MODES)
         appRT.sensors['SenseHat'].update_sleep_mode(cliArgs.noLED)
         appRT.sensors['SenseHat'].displProgress = cliArgs.progress
-        appRT.sensors['SenseHat'].display_message(APP_NAME)
+        appRT.sensors['SenseHat'].display_message(APP_NAME, COLOR_LOGO_FG, COLOR_LOGO_BG)
+
+        appRT.sensors['SenseHat'].set_display_mode(
+            cliArgs.dmode or appRT.config.get(f451SenseHat.KWD_DISPLAY)
+        )
 
     except KeyboardInterrupt:
         appRT.sensors['SenseHat'].display_reset()
+        appRT.sensors['SenseHat'].display_off()
         print(f'{APP_NAME} (v{APP_VERSION}) - Session terminated by user')
         sys.exit(0)
 
