@@ -616,7 +616,7 @@ def collect_data(app, data, cpuTempsQ, timeCurrent, cliUI=False):
             app.logger.log_info(
                 f'Uploaded: TEMP: {round(tempComp, app.ioRounding)} - PRESS: {round(pressRaw, app.ioRounding)} - HUMID: {round(humidRaw, app.ioRounding)}'
             )
-            app.update_upload_status(cliUI, timeCurrent, f451CLIUI.STATUS_OK)
+            app.update_upload_status(cliUI, timeCurrent, f451CLIUI.HTTP_STATUS_OK)
 
         finally:
             app.timeUpdate = timeCurrent
